@@ -31,6 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define OFFSET_SENSOR 900
 
 /* USER CODE END PD */
 
@@ -40,6 +41,9 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
@@ -49,18 +53,28 @@ uint8_t data[] = "Hello World\n";
 int8_t btn_flag = 1;
 uint8_t test_data = 1; /*valid [1:101]*/
 uint16_t timer_counter = 0;
+uint16_t adc_buffer[8];
+int16_t after_offset[8];
+int16_t sum_after_offset = 0;
+int8_t direction_flag = 1; //0: init | 1: left | -1: right
+int8_t out_of_line_flag = 0; //0: init | 1: left | -1: right
 
 uint8_t rx_data = 0;
+int16_t sensors_value = 0;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
-/* USER CODE BEGIN PFP */
+static void MX_ADC1_Init(void);
 
+
+/* USER CODE BEGIN PFP */
+int16_t ProcessLineSensor(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -98,13 +112,20 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_UART_Transmit(&huart1, data, sizeof(data), 1000);
   HAL_UART_Receive_IT(&huart1, &rx_data, 1);
   HAL_Delay(1000);
+
+  /* init adc_buffer */
+  for (int i =0; i<8; i++) {
+	  adc_buffer[i] = 0;
+  }
 
   /* USER CODE END 2 */
 
@@ -115,16 +136,20 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if (btn_flag == -1) {
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-		  HAL_UART_Transmit(&huart1, data, sizeof(data), 1000);
-		  HAL_Delay(200);
-		  btn_flag = 1;
-	  }
-	  else {
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+//	  if (btn_flag == -1) {
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+//		  HAL_UART_Transmit(&huart1, data, sizeof(data), 1000);
+//		  HAL_Delay(200);
+//		  btn_flag = 1;
+//	  }
+//	  else {
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 //		  HAL_Delay(1000);
-	  }
+
+	  HAL_ADC_Start_DMA(&hadc1, adc_buffer, 8);
+	  sensors_value = ProcessLineSensor();
+	  HAL_Delay(10);
+//	  }
   }
   /* USER CODE END 3 */
 }
@@ -173,6 +198,121 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_10B;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 8;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Rank = 2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Rank = 3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = 4;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_5;
+  sConfig.Rank = 5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_6;
+  sConfig.Rank = 6;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_7;
+  sConfig.Rank = 7;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_8;
+  sConfig.Rank = 8;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -254,6 +394,22 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -268,6 +424,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
@@ -294,6 +451,80 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/*
+ * Process 8 value of sensor data to delta e
+ * Pin: 		[A1] [A2] [A3] [A4] [A5] [A6] [A7] [B0]
+ * Weighted: 	-3	  -2   -1   0    0    1    2    3
+ * Index:		[0]  [1]  [2]  [3]  [4]  [5]  [6]  [7]
+ */
+int16_t ProcessLineSensor(void) {
+//	uint16_t after_offset[8];
+	int16_t return_value = 0;
+	uint8_t working_sensor_left = 0;
+	uint8_t working_sensor_right = 0;
+	uint8_t working_sensor_total = 0;
+	sum_after_offset = 0;
+	for (int i = 0; i<8; i++) {
+		after_offset[i] = adc_buffer[i] - OFFSET_SENSOR;
+		if (after_offset[i] < 0) after_offset[i] = 0;
+		sum_after_offset = sum_after_offset + after_offset[i];
+		if (after_offset[i] != 0) working_sensor_total++;
+	}
+	return_value = -(after_offset[0]*(-3) + after_offset[1]*(-2) + after_offset[2]*(-1)
+				 + after_offset[5]*(1) + after_offset[6]*(2) + after_offset[7]*(3));
+
+
+
+
+	if ( ( (after_offset[3] == 0 || after_offset[4] == 0 ) && return_value == 0 ) || working_sensor_total >= 5) {
+		/*out of line*/
+		out_of_line_flag = 1;
+	}
+
+
+
+
+	if (out_of_line_flag == 0) {
+		/*not out of line*/
+		if (return_value > 0) {
+			direction_flag = 1; //to the left
+		} else if (return_value < 0) {
+			direction_flag = -1; //to the left
+		} else {
+	//		direction_flag = 0;
+		}
+	} else {
+		/* out of line*/
+		if (working_sensor_total >=1 && working_sensor_total <=2 && sum_after_offset >=150) {
+			/*1 or 2 sensor work = width of line and sum_after_offset to filter noise when sensor lifted*/
+				out_of_line_flag = 0;
+			}
+
+		if (direction_flag == 1) {
+			return_value = 500;
+			if ( after_offset[0] != 0 && (working_sensor_total >=1 && working_sensor_total <= 2)) {
+				/*sensor [0] reach the line again*/
+				out_of_line_flag = 0;
+			} else {
+
+			}
+		}
+		if (direction_flag == -1)  {
+			return_value = -500;
+			if (after_offset[7] != 0 && (working_sensor_total >=1 && working_sensor_total <= 2)) {
+				/*sensor [7] reach the line again*/
+				out_of_line_flag = 0;
+			} else {
+
+			}
+		}
+	}
+
+
+
+	return return_value;
+}
 
 /*
  * Pack data to message and transmit via UART
