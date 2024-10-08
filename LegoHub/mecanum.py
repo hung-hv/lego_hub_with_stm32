@@ -1,6 +1,7 @@
 import math
 from mindstorms import MSHub, Motor
 import utime
+import machine
 
 
 class Mecanum:
@@ -96,6 +97,40 @@ class Mecanum:
         # Set motor speeds
         self.setWheelSpeed(self.wheel_speeds)
     
+# Timer callback function
+def timer_callback(timer):
+    # hub.status_light.on('green')
+    print("[Timer] callback function called.")
+    # lego_hub.write("s") #start receive value from STM32
+    # val = lego_hub.read()
+    # print("-> Received value:", val)
+    # # if val is not None:
+    # LineValue = GetUartData(val)
+    # print("[Data]:", LineValue)
+        # pico.write("hello there")
+    # else:
+        # print("No valid data received from pico sensor.")
+        # timer.deinit()
+
+
+
+# Timer2 callback function
+# rtc = machine.RTC()
+timer_us = 0
+# Timer2 callback function for calculate PID loop
+def timer_callback2(timer2):
+    print("[Timer2] callback function called.")
+    global timer_us
+    start_time = utime.ticks_us()
+    print("Time elapsed (us):", start_time - timer_us)
+    timer_us = start_time
+
+# Create a timer object
+timer = machine.Timer(-1)
+timer2 = machine.Timer(-1)
+# Initialize the timer to call the callback function every 0.1ms
+timer.init(period=500, mode=machine.Timer.PERIODIC, callback=timer_callback)
+timer2.init(period=10, mode=machine.Timer.PERIODIC, callback=timer_callback2)
 
 # Example usage
 wheel_radius = 1  # 5 cm
