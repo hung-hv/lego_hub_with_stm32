@@ -3,8 +3,81 @@ from mindstorms import MSHub, Motor
 import utime
 import machine
 from hub import motion
+from hub import port
+
+LineValue = 0
+portB = port.B
+"""
+MODE_DEFAULT = 0
+MODE_FULL_DUPLEX = 1
+MODE_HALF_DUPLEX = 2
+MODE_GPIO = 3
+"""
+portB.mode(1)
+utime.sleep_ms(500)
+portB.baud(9600)
 
 
+class Uart:
+    # initialize
+    def __init__(self, port, timeOut: int, id: str):
+        self.port = port
+        self.message_started = False
+        self.timeOut = timeOut
+        self.id = id
+
+    #read data from UART
+    def read(self):
+        # self.write("<"+self.id+">")
+        start = utime.time()
+        message = []
+        while 1:
+            # print("wating TX data...")
+            byte_read = self.port.read(1)  # Read one byte over UART lines
+            # print("-> byte read: ", byte_read)
+            
+            if byte_read:
+                if byte_read == b"\0":
+                    # End of message. Convert the message to a string and return it.
+                    return str("".join(message))
+                    # return str(message)
+                else:
+                    # Accumulate message byte.
+                    try:
+                        message.append(chr(byte_read[0]))
+                    except:
+                        pass
+                if self.timeOut is not 0:
+                    if utime.time() - start >= self.timeOut:
+                        # raise Exception("Timeout exceded. Is pi pico connected?")
+                        print("[Timeout] UART timeout exceded")
+                        break
+        
+            else: 
+                return None  # Return None if no valid data is received
+
+    # write string to UART
+    def write(self, str):
+        self.port.write(str)
+
+def GetUartData(message):
+    """
+    Retrieves data from UART based on the given message.
+    Args:
+        message (str): The message received from UART.
+    Returns:
+        int: [1:101] The data retrieved from UART.
+            0: has less than 2 characters.
+            200: first character is not 's'.
+    """
+    if message is not None and len(message) >= 2:
+        if message[0] == 's':
+            #todo: check if 's' not in [0] position
+            return ord(message[1])
+        else:
+            return 200
+    else:
+        return 0    
 
 class Mecanum:
     def __init__(self, wheel_radius, robot_width, robot_length):
@@ -51,13 +124,13 @@ class Mecanum:
             elif speeds[i] > upper_limit:
                 speeds[i] = upper_limit
         self.motor_FR.start_at_power(int(speeds[0]))
-        print("speeds[0]: " + str(speeds[0]))
+        # print("speeds[0]: " + str(speeds[0]))
         self.motor_FL.start_at_power(-int(speeds[1]))
-        print("speeds[1]: " + str(speeds[1]))
+        # print("speeds[1]: " + str(speeds[1]))
         self.motor_RR.start_at_power(int(speeds[2]))
-        print("speeds[2]: " + str(speeds[2]))
+        # print("speeds[2]: " + str(speeds[2]))
         self.motor_RL.start_at_power(-int(speeds[3]))
-        print("speeds[3]: " + str(speeds[3]))
+        # print("speeds[3]: " + str(speeds[3]))
         # self.wheel_speeds = speeds
         # for motor, speed in zip(self.motors, speeds):
         #     motor.start_at_power(speed)
@@ -105,17 +178,21 @@ class Mecanum:
 
         # Set motor speeds
         self.setWheelSpeed(self.wheel_speeds)
-    
+
+# Initialize the hub
+lego_hub = Uart(portB, 0, "a")
+hub = MSHub()
+print("init hub\n")
 # Timer callback function
 def timer_callback(timer):
     hub.status_light.on('green')
-    # print("[Timer] callback function called.")
-    # lego_hub.write("s") #start receive value from STM32
-    # val = lego_hub.read()
-    # print("-> Received value:", val)
-    # # if val is not None:
-    # LineValue = GetUartData(val)
-    # print("[Data]:", LineValue)
+    print("[Timer] callback function called.")
+    lego_hub.write("s") #start receive value from STM32
+    val = lego_hub.read()
+    print("-> Received value:", val)
+    # if val is not None:
+    LineValue = GetUartData(val)
+    print("[Data]:", LineValue)
         # pico.write("hello there")
     # else:
         # print("No valid data received from pico sensor.")
@@ -136,7 +213,7 @@ kp = 0.8
 ki = 0.008
 # ki = 0.004
 # kd = 32
-kd = 40
+kd = 20
 PID_control = 0
 sampling_time = 1
 invert_samling_time = 1/sampling_time
@@ -159,7 +236,7 @@ def timer_callback2(timer2):
 
     #get delta_e
     delta_e = 0 - motion.yaw_pitch_roll()[0]
-    print("[delta_e]: \n" + str(delta_e))
+    # print("[delta_e]: \n" + str(delta_e))
     # if (delta_e > 0):
     #     print("                                                                ----\n")
     # if (delta_e < 0):
@@ -177,13 +254,13 @@ def timer_callback2(timer2):
         I_term = -15
     if (delta_e == 0):
         I_term = 0
-    print("P_term: " + str(P_term) + " D_term: " + str(D_term) + " I_term: " + str(I_term))
+    # print("P_term: " + str(P_term) + " D_term: " + str(D_term) + " I_term: " + str(I_term))
     PID_control = - (P_term + D_term + I_term)
     if (delta_e > 0 and PID_control > 10):
         PID_control = 0
     if (delta_e < 0 and PID_control < 10):
         PID_control = 0
-    print("PID_control: " + str(PID_control))
+    # print("PID_control: " + str(PID_control))
 
     # print("yaw: " + str(rotations[0]) + " pitch: " + str(rotations[1]) + " roll: " + str(rotations[2]))
 
@@ -202,8 +279,8 @@ wheel_radius = 1  # 5 cm
 robot_width = 1    # 20 cm
 robot_length = 1   # 30 cm
 # motor_ports = ['C', 'D', 'E', 'F']  # Motor ports
-hub = MSHub()
-print("init hub\n")
+
+
 
 # Initialize the Mecanum robot
 mecanum_robot = Mecanum(wheel_radius, robot_width, robot_length)
@@ -225,7 +302,7 @@ while 1:
     # utime.sleep(1)
 
     # #apply PID_control
-    print("PID_control: " + str(PID_control))
+    # print("PID_control: " + str(PID_control))
     mecanum_robot.driveRobot(0, 0, PID_control)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
     mecanum_robot.getAllSpeeds()
     # utime.sleep(0)

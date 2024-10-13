@@ -51,7 +51,7 @@ UART_HandleTypeDef huart1;
 /* USER CODE BEGIN PV */
 uint8_t data[] = "Hello World\n";
 int8_t btn_flag = 1;
-uint8_t test_data = 1; /*valid [1:101]*/
+volatile uint8_t test_data = 1; /*valid [1:101]*/
 uint16_t timer_counter = 0;
 uint16_t adc_buffer[8];
 int16_t after_offset[8];
@@ -59,7 +59,9 @@ int16_t sum_after_offset = 0;
 int8_t direction_flag = 1; //0: init | 1: left | -1: right
 int8_t out_of_line_flag = 0; //0: init | 1: left | -1: right
 
-uint8_t rx_data = 0;
+uint32_t while_counter = 0;
+
+volatile uint8_t rx_data = 0;
 int16_t sensors_value = 0;
 
 /* USER CODE END PV */
@@ -71,8 +73,6 @@ static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_ADC1_Init(void);
-
-
 /* USER CODE BEGIN PFP */
 int16_t ProcessLineSensor(void);
 /* USER CODE END PFP */
@@ -149,6 +149,12 @@ int main(void)
 	  HAL_ADC_Start_DMA(&hadc1, adc_buffer, 8);
 	  sensors_value = ProcessLineSensor();
 	  HAL_Delay(10);
+
+	  while_counter++;
+
+	  if (while_counter >=10000) while_counter = 0;
+
+
 //	  }
   }
   /* USER CODE END 3 */
@@ -171,13 +177,12 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 100;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 12;
+  RCC_OscInitStruct.PLL.PLLN = 96;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
@@ -475,15 +480,10 @@ int16_t ProcessLineSensor(void) {
 				 + after_offset[5]*(1) + after_offset[6]*(2) + after_offset[7]*(3));
 
 
-
-
 	if ( ( (after_offset[3] == 0 || after_offset[4] == 0 ) && return_value == 0 ) || working_sensor_total >= 5) {
 		/*out of line*/
 		out_of_line_flag = 1;
 	}
-
-
-
 
 	if (out_of_line_flag == 0) {
 		/*not out of line*/
@@ -500,14 +500,12 @@ int16_t ProcessLineSensor(void) {
 			/*1 or 2 sensor work = width of line and sum_after_offset to filter noise when sensor lifted*/
 				out_of_line_flag = 0;
 			}
-
 		if (direction_flag == 1) {
 			return_value = 500;
 			if ( after_offset[0] != 0 && (working_sensor_total >=1 && working_sensor_total <= 2)) {
 				/*sensor [0] reach the line again*/
 				out_of_line_flag = 0;
 			} else {
-
 			}
 		}
 		if (direction_flag == -1)  {
@@ -516,12 +514,9 @@ int16_t ProcessLineSensor(void) {
 				/*sensor [7] reach the line again*/
 				out_of_line_flag = 0;
 			} else {
-
 			}
 		}
 	}
-
-
 
 	return return_value;
 }
@@ -538,7 +533,7 @@ void TransmitPackedData(uint8_t data) {
 //	packed_data[2] = 'e';
 	packed_data[2] = '\0';
 	/*send the packed data*/
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+//	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 	HAL_UART_Transmit(&huart1, packed_data, 3, 1000);
 }
 
@@ -563,7 +558,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
 //    if (htim == &htim2) {
 //    	timer_counter++;
 //    	if (timer_counter >= 1) { /* 500ms each time */
-//    		TransmitUart(test_data);
+//    		TransmitPackedData(test_data);
 //    		test_data++;
 //			if (test_data >= 101) {
 //				test_data = 1;

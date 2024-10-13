@@ -52,6 +52,12 @@ default.size.stdout \
 OBJDUMP_LIST += \
 stm32_with_lego.list \
 
+OBJCOPY_HEX += \
+stm32_with_lego.hex \
+
+OBJCOPY_BIN += \
+stm32_with_lego.bin \
+
 
 # All Target
 all: main-build
@@ -75,12 +81,22 @@ stm32_with_lego.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
+stm32_with_lego.hex: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objcopy  -O ihex $(EXECUTABLES) "stm32_with_lego.hex"
+	@echo 'Finished building: $@'
+	@echo ' '
+
+stm32_with_lego.bin: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objcopy  -O binary $(EXECUTABLES) "stm32_with_lego.bin"
+	@echo 'Finished building: $@'
+	@echo ' '
+
 # Other Targets
 clean:
-	-$(RM) default.size.stdout stm32_with_lego.elf stm32_with_lego.list stm32_with_lego.map
+	-$(RM) default.size.stdout stm32_with_lego.bin stm32_with_lego.elf stm32_with_lego.hex stm32_with_lego.list stm32_with_lego.map
 	-@echo ' '
 
-secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
+secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_HEX) $(OBJCOPY_BIN)
 
 fail-specified-linker-script-missing:
 	@echo 'Error: Cannot find the specified linker script. Check the linker settings in the build configuration.'
