@@ -66,8 +66,8 @@ all: main-build
 main-build: stm32_with_lego.elf secondary-outputs
 
 # Tool invocations
-stm32_with_lego.elf stm32_with_lego.map: $(OBJS) $(USER_OBJS) C:\Users\vieth\Documents\stm32\connect_with_lego\stm32_with_lego\STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "stm32_with_lego.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\vieth\Documents\stm32\connect_with_lego\stm32_with_lego\STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="stm32_with_lego.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+stm32_with_lego.elf stm32_with_lego.map: $(OBJS) $(USER_OBJS) C:\Users\vieth\Documents\stm32\Lego_with_stm32\lego_hub_with_stm32\stm32\stm32_with_lego\STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "stm32_with_lego.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\vieth\Documents\stm32\Lego_with_stm32\lego_hub_with_stm32\stm32\stm32_with_lego\STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="stm32_with_lego.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

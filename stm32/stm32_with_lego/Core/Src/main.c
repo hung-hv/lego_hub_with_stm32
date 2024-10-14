@@ -64,6 +64,8 @@ uint32_t while_counter = 0;
 volatile uint8_t rx_data = 0;
 int16_t sensors_value = 0;
 
+volatile uint8_t tx_data = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,6 +77,7 @@ static void MX_TIM2_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 int16_t ProcessLineSensor(void);
+uint8_t map(int input, int input_min, int input_max, int output_min, int output_max);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -147,8 +150,8 @@ int main(void)
 //		  HAL_Delay(1000);
 
 	  HAL_ADC_Start_DMA(&hadc1, adc_buffer, 8);
-	  sensors_value = ProcessLineSensor();
-	  HAL_Delay(10);
+
+	  HAL_Delay(5);
 
 	  while_counter++;
 
@@ -518,7 +521,17 @@ int16_t ProcessLineSensor(void) {
 		}
 	}
 
+	if (return_value < -500) {
+		return_value = -500;
+	} else if (return_value > 500) {
+		return_value = 500;
+	}
+
 	return return_value;
+}
+
+uint8_t map(int input, int input_min, int input_max, int output_min, int output_max) {
+    return (input - input_min) * (output_max - output_min) / (input_max - input_min) + output_min;
 }
 
 /*
@@ -542,7 +555,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 		/*receive from LEGO hub char "s"*/
 		if ( (char)rx_data == 's') {
 //			HAL_UART_Transmit(&huart1, &test_data, 1, 1000);
-			TransmitPackedData(test_data);
+
+//			TransmitPackedData(test_data);
+			TransmitPackedData(tx_data);
 			test_data++;
 			if (test_data >= 101) {
 				test_data = 1;
@@ -575,6 +590,12 @@ void HAL_GPIO_EXTI_Callback( uint16_t GPIO_Pin)
 		btn_flag = -1;
 //		HAL_Delay(50);
 	}
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	sensors_value = ProcessLineSensor();
+	tx_data = map(sensors_value, -500, 500, 1, 101);
 }
 
 

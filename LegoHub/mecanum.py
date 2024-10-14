@@ -170,6 +170,7 @@ class Mecanum:
         R = self.wheel_radius
 
         # Calculate wheel speeds
+        # L_and_R = 1
         self.wheel_speeds[0] = (1/R) * (vx + vy + (L + W) * omega)  # Front right
         self.wheel_speeds[1] = (1/R) * (vx - vy - (L + W) * omega)  # Front left
         self.wheel_speeds[2] = (1/R) * (vx - vy + (L + W) * omega)  # Rear right
@@ -186,19 +187,41 @@ print("init hub\n")
 # Timer callback function
 def timer_callback(timer):
     hub.status_light.on('green')
-    print("[Timer] callback function called.")
+    # print("[Timer] callback function called.")
     lego_hub.write("s") #start receive value from STM32
     val = lego_hub.read()
-    print("-> Received value:", val)
+    # print("-> Received value:", val)
     # if val is not None:
     LineValue = GetUartData(val)
     print("[Data]:", LineValue)
+    pid_line_calculate(LineValue)
         # pico.write("hello there")
     # else:
         # print("No valid data received from pico sensor.")
         # timer.deinit()
 
+kp_line = 0.9
+ki_line = 0.005
+kd_line = 0.6
+PID_line_control = 0
+sampling_time_line = 10
+invert_samling_time_line = 1/sampling_time_line
+I_term_line = 0
+delta_e_line = 0
+prev_delta_e_line = 0
 
+def pid_line_calculate(sensor_value):
+    global kp_line, ki_line, kd_line, PID_line_control, invert_samling_time_line, sampling_time_line, I_term_line, delta_e_line, prev_delta_e_line
+
+    prev_delta_e_line = delta_e_line
+
+    delta_e_line = 51 - sensor_value
+    print("[delta_e_line]:", delta_e_line)
+    P_term_line = kp_line * delta_e_line
+    I_term_line = I_term_line + (ki_line * delta_e_line * sampling_time_line)
+    D_term_line = kd_line * (delta_e_line - prev_delta_e_line)/invert_samling_time_line
+    PID_line_control = P_term_line + I_term_line + D_term_line
+    print("[PID_line_control]:", PID_line_control)
 
 # Timer2 callback function
 # rtc = machine.RTC()
@@ -271,13 +294,13 @@ def timer_callback2(timer2):
 timer = machine.Timer(-1)
 timer2 = machine.Timer(-1)
 # Initialize the timer to call the callback function every 0.1ms
-timer.init(period=500, mode=machine.Timer.PERIODIC, callback=timer_callback)
+timer.init(period=sampling_time_line, mode=machine.Timer.PERIODIC, callback=timer_callback)
 timer2.init(period=sampling_time, mode=machine.Timer.PERIODIC, callback=timer_callback2)
 
 # Example usage
 wheel_radius = 1  # 5 cm
-robot_width = 1    # 20 cm
-robot_length = 1   # 30 cm
+robot_width = 0.5    # 20 cm
+robot_length = 0.5   # 30 cm
 # motor_ports = ['C', 'D', 'E', 'F']  # Motor ports
 
 
@@ -286,7 +309,7 @@ robot_length = 1   # 30 cm
 mecanum_robot = Mecanum(wheel_radius, robot_width, robot_length)
 
 while 1:
-    print("test!!!!\n")
+    # print("test!!!!\n")
     # Drive the robot forward
     # mecanum_robot.driveRobot(50, 0, 0)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
     # mecanum_robot.getAllSpeeds()
@@ -303,7 +326,7 @@ while 1:
 
     # #apply PID_control
     # print("PID_control: " + str(PID_control))
-    mecanum_robot.driveRobot(0, 0, PID_control)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+    mecanum_robot.driveRobot(30, 0, 20)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
     mecanum_robot.getAllSpeeds()
     # utime.sleep(0)
 
