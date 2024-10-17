@@ -45,16 +45,27 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+UART_HandleTypeDef huart1;
+
 /* USER CODE BEGIN PV */
 uint16_t adc_buffer[16] = {0};
 int16_t after_offset[16] = {0};
+
 uint8_t working_sensor_horizontal = 0;
 uint8_t working_sensor_vertical = 0;
 uint8_t working_sensor_total = 0;
 int16_t horizontal_value = 0; // ---
 int16_t vertical_value = 0;   //   |
+int16_t last_horizon_value = 0;
+int16_t last_vertical_value = 0;
+uint8_t mapped_horizon_value = 0;
+uint8_t mapped_vertical_value = 0;
+uint8_t line_direction = 2; // 0-horizon	1-vertical	2-unknown
 
 uint32_t while_counter = 0;
+
+volatile uint8_t tx_data = 0;
+volatile uint8_t rx_data = 0;
 
 /* USER CODE END PV */
 
@@ -63,8 +74,10 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 int16_t ProcessLineSensor(void);
+uint8_t map(int input, int input_min, int input_max, int output_min, int output_max);
 
 /* USER CODE END PFP */
 
@@ -103,6 +116,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -115,7 +129,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	HAL_ADC_Start_DMA(&hadc1, adc_buffer, 16);
-	HAL_Delay(5);
+	HAL_Delay(10);
 	ProcessLineSensor();
 
 	while_counter++;
@@ -366,6 +380,41 @@ static void MX_ADC1_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -414,6 +463,10 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+uint8_t map(int input, int input_min, int input_max, int output_min, int output_max) {
+    return (input - input_min) * (output_max - output_min) / (input_max - input_min) + output_min;
+}
+
 /*
  * Process 16 value of sensor data to delta e
  * Pin: 		[C0] [C1] [C2] [C3] [A0] [A1] [A2] [A3]
@@ -447,17 +500,29 @@ int16_t ProcessLineSensor(void) {
 			else working_sensor_vertical++;
 		}
 	}
-	if (working_sensor_horizontal <=3 && working_sensor_horizontal >= 1) {
-		horizontal_value = -(after_offset[0]*(-3) + after_offset[1]*(-2) + after_offset[2]*(-1)
-						 + after_offset[5]*(1) + after_offset[6]*(2) + after_offset[7]*(3));
-	} else{
-		/*out of line or to many sensors in 1 line*/
-	}
-	if (working_sensor_vertical <=3 && working_sensor_vertical >= 1) {
-		vertical_value = -(after_offset[8]*(-3) + after_offset[9]*(-2) + after_offset[10]*(-1)
-							 + after_offset[13]*(1) + after_offset[14]*(2) + after_offset[15]*(3));
+	/*calculate direction of line*/
+	if (working_sensor_horizontal > working_sensor_vertical) line_direction = 0;
+	if (working_sensor_horizontal < working_sensor_vertical) line_direction = 1;
+
+	if (working_sensor_horizontal <=3 && working_sensor_horizontal >= 2) {
+		horizontal_value = -(after_offset[0]*(-5) + after_offset[1]*(-2) + after_offset[2]*(-1)
+						 + after_offset[5]*(1) + after_offset[6]*(2) + after_offset[7]*(5));
+		if (horizontal_value > 500) horizontal_value = 500;
+		if (horizontal_value < -500) horizontal_value = -500;
+		last_horizon_value = horizontal_value;
 	} else {
 		/*out of line or to many sensors in 1 line*/
+		horizontal_value = last_horizon_value;
+	}
+	if (working_sensor_vertical <=3 && working_sensor_vertical >= 2) {
+		vertical_value = -(after_offset[8]*(-5) + after_offset[9]*(-2) + after_offset[10]*(-1)
+							 + after_offset[13]*(1) + after_offset[14]*(2) + after_offset[15]*(5));
+		if (vertical_value > 500) vertical_value = 500;
+		if (vertical_value < -500) vertical_value = -500;
+		last_vertical_value = vertical_value;
+	} else {
+		/*out of line or to many sensors in 1 line*/
+		vertical_value = last_vertical_value;
 	}
 
 
@@ -509,6 +574,44 @@ int16_t ProcessLineSensor(void) {
 //	return return_value;
 
 	return 0;
+}
+/*format : [s][dir][horizon_data][vertical_data][\0]
+ * [dir]: 	0: send "h" - line on horizontal sensors
+ * 			1: send "v" - line on vertical sensors
+ */
+
+void TransmitPackedData(uint8_t dir, uint8_t horizon_data, uint8_t vertical_data) {
+	const uint8_t length = 5;
+	uint8_t packed_data[length]; //
+	/*packaging data with prefix and suffix to message*/
+	packed_data[0] = 's';
+	if (dir == 0) packed_data[1] = "h";
+	if (dir == 1) packed_data[1] = "v";
+	packed_data[2] = horizon_data;
+	packed_data[3] = vertical_data;
+	packed_data[4] = '\0';
+
+	/*send the packed data*/
+//	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+	HAL_UART_Transmit(&huart1, packed_data, length, 1000);
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+	if(huart == &huart1){
+		/*receive from LEGO hub char "s"*/
+		if ( (char)rx_data == 's') {
+			TransmitPackedData(line_direction, mapped_horizon_value, mapped_vertical_value);
+		}
+		HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+	}
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	ProcessLineSensor();
+	mapped_horizon_value = map(horizontal_value, -500, 500, 1, 101);
+	mapped_vertical_value = map(vertical_value, -500, 500, 1, 101);
+
 }
 
 /* USER CODE END 4 */
