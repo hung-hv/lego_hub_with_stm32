@@ -70,14 +70,17 @@ def GetUartData(message):
             0: has less than 2 characters.
             200: first character is not 's'.
     """
-    if message is not None and len(message) >= 2:
+    if message is not None and len(message) >= 4:
         if message[0] == 's':
             #todo: check if 's' not in [0] position
-            return ord(message[1])
+            direction = message[1]
+            horizon_data = ord(message[2])
+            vertical_data = ord(message[3])
+            return direction, horizon_data, vertical_data
         else:
-            return 200
+            return None, None, None
     else:
-        return 0    
+        return None, None, None    
 
 class Mecanum:
     def __init__(self, wheel_radius, robot_width, robot_length):
@@ -99,13 +102,13 @@ class Mecanum:
         # Initialize motors
         # self.motors = [Motor(port) for port in motor_ports]
         
-        self.motor_FR = Motor('A') #front right
+        self.motor_FR = Motor('F') #front right
         # self.motor_FR.start_at_power(50)
-        self.motor_FL = Motor('E') #front left
+        self.motor_FL = Motor('D') #front left
         # self.motor_FL.start_at_power(50)
-        self.motor_RR = Motor('D') #rear right
+        self.motor_RR = Motor('E') #rear right
         # self.motor_RR.start_at_power(50)
-        self.motor_RL = Motor('F') #rear left
+        self.motor_RL = Motor('A') #rear left
         # self.motor_RL.start_at_power(50)
 
     def setWheelSpeed(self, speeds):
@@ -188,13 +191,31 @@ print("init hub\n")
 def timer_callback(timer):
     hub.status_light.on('green')
     # print("[Timer] callback function called.")
-    lego_hub.write("s") #start receive value from STM32
-    val = lego_hub.read()
+    # lego_hub.write("r") #start receive value from STM32
+    # val = lego_hub.read()
+    # print("-> Received value:", val)
+    
+    # Send request to send 'r'
+    lego_hub.write('r')
+    # Receive ACK from STM32
+    ack = lego_hub.port.read(1)
+    if ack and ack == b'a':
+        val = lego_hub.read()
+        print("-> Received value:", val)
+        # Process the received value
+        direction, horizon_data, vertical_data = GetUartData(val)
+        # if direction is not None:
+        print(direction)
+        print(horizon_data)
+        print(vertical_data)
+        #     print(f"Received direction: {direction}")
+        #     print(f"horizontal: {horizon_data}")
+        #     print(f"vertical: {vertical_data}")
     # print("-> Received value:", val)
     # if val is not None:
-    LineValue = GetUartData(val)
-    print("[Data]:", LineValue)
-    pid_line_calculate(LineValue)
+    # LineValue = GetUartData(val)
+    # print("[Data]:", LineValue)
+    # pid_line_calculate(LineValue)
         # pico.write("hello there")
     # else:
         # print("No valid data received from pico sensor.")
@@ -326,7 +347,7 @@ while 1:
 
     # #apply PID_control
     # print("PID_control: " + str(PID_control))
-    mecanum_robot.driveRobot(30, 0, 20)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+    # mecanum_robot.driveRobot(30, 0, 20)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
     mecanum_robot.getAllSpeeds()
     # utime.sleep(0)
 

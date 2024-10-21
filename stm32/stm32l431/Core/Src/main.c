@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+//#include <stdio.h>
 
 /* USER CODE END Includes */
 
@@ -33,6 +34,9 @@
 /* USER CODE BEGIN PD */
 
 #define OFFSET_SENSOR 3550
+/*TODO: should be dynamic by sampling*/
+#define MIN_OFFSET 0
+#define MAX_OFFSET 70
 
 /* USER CODE END PD */
 
@@ -48,6 +52,7 @@ DMA_HandleTypeDef hdma_adc1;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+uint8_t data[] = "Hello World\n";
 uint16_t adc_buffer[16] = {0};
 int16_t after_offset[16] = {0};
 
@@ -66,6 +71,8 @@ uint32_t while_counter = 0;
 
 volatile uint8_t tx_data = 0;
 volatile uint8_t rx_data = 0;
+const uint8_t length = 5;
+uint8_t packed_data[5] = {0};
 
 /* USER CODE END PV */
 
@@ -78,6 +85,8 @@ static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 int16_t ProcessLineSensor(void);
 uint8_t map(int input, int input_min, int input_max, int output_min, int output_max);
+void Flush_UART_RX_Buffer(UART_HandleTypeDef *huart);
+void TransmitPackedData(uint8_t dir, uint8_t horizon_data, uint8_t vertical_data);
 
 /* USER CODE END PFP */
 
@@ -118,6 +127,24 @@ int main(void)
   MX_ADC1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  HAL_UART_Transmit(&huart1, data, sizeof(data), 1000);
+  /*sync uart signal*/
+  // Timeout variables
+//  uint32_t start_time = HAL_GetTick();
+//  uint32_t timeout = 5000; // 5 seconds timeout
+  // Loop to continuously check for 'r' character with timeout
+  while (1) {
+	  HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+	  if ((char)rx_data == 'r') {
+		  break;
+	  }
+//	  if ((HAL_GetTick() - start_time) > timeout) {
+////		  printf("Timeout waiting for 'r' character\n");
+//		  break;
+//	  }
+  }
+
+  HAL_Delay(1000);
 
   /* USER CODE END 2 */
 
@@ -128,7 +155,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	HAL_ADC_Start_DMA(&hadc1, adc_buffer, 16);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, 16);
 	HAL_Delay(10);
 	ProcessLineSensor();
 
@@ -492,7 +519,8 @@ int16_t ProcessLineSensor(void) {
 //	sum_after_offset = 0;
 	for (int i = 0; i<16; i++) {
 		after_offset[i] = adc_buffer[i] - OFFSET_SENSOR;
-		if (after_offset[i] < 0) after_offset[i] = 0;
+		if (after_offset[i] < MIN_OFFSET) after_offset[i] = MIN_OFFSET;
+		if (after_offset[i] > MAX_OFFSET) after_offset[i] = MAX_OFFSET;
 //		sum_after_offset = sum_after_offset + after_offset[i];
 		if (after_offset[i] != 0)  {
 			working_sensor_total++;
@@ -501,29 +529,39 @@ int16_t ProcessLineSensor(void) {
 		}
 	}
 	/*calculate direction of line*/
-	if (working_sensor_horizontal > working_sensor_vertical) line_direction = 0;
-	if (working_sensor_horizontal < working_sensor_vertical) line_direction = 1;
+//	if (working_sensor_horizontal > working_sensor_vertical) line_direction = 0;
+//	if (working_sensor_horizontal < working_sensor_vertical) line_direction = 1;
 
-	if (working_sensor_horizontal <=3 && working_sensor_horizontal >= 2) {
+	if (working_sensor_horizontal <=3 && working_sensor_horizontal >= 1) {
 		horizontal_value = -(after_offset[0]*(-5) + after_offset[1]*(-2) + after_offset[2]*(-1)
 						 + after_offset[5]*(1) + after_offset[6]*(2) + after_offset[7]*(5));
 		if (horizontal_value > 500) horizontal_value = 500;
 		if (horizontal_value < -500) horizontal_value = -500;
 		last_horizon_value = horizontal_value;
-	} else {
+		line_direction = 0;
+	}
+	else {
 		/*out of line or to many sensors in 1 line*/
 		horizontal_value = last_horizon_value;
+		line_direction = 2;
 	}
-	if (working_sensor_vertical <=3 && working_sensor_vertical >= 2) {
+	if (working_sensor_vertical <=3 && working_sensor_vertical >= 1) {
 		vertical_value = -(after_offset[8]*(-5) + after_offset[9]*(-2) + after_offset[10]*(-1)
 							 + after_offset[13]*(1) + after_offset[14]*(2) + after_offset[15]*(5));
 		if (vertical_value > 500) vertical_value = 500;
 		if (vertical_value < -500) vertical_value = -500;
 		last_vertical_value = vertical_value;
-	} else {
+		line_direction = 1;
+	}
+	else {
 		/*out of line or to many sensors in 1 line*/
 		vertical_value = last_vertical_value;
+		line_direction = 2;
 	}
+//	else {
+//		line_direction = 2;
+//	}
+
 
 
 
@@ -581,12 +619,12 @@ int16_t ProcessLineSensor(void) {
  */
 
 void TransmitPackedData(uint8_t dir, uint8_t horizon_data, uint8_t vertical_data) {
-	const uint8_t length = 5;
-	uint8_t packed_data[length]; //
+
 	/*packaging data with prefix and suffix to message*/
 	packed_data[0] = 's';
-	if (dir == 0) packed_data[1] = "h";
-	if (dir == 1) packed_data[1] = "v";
+	if (dir == 0) packed_data[1] = 'h';
+	if (dir == 1) packed_data[1] = 'v';
+	if (dir == 2) packed_data[1] = 'i';
 	packed_data[2] = horizon_data;
 	packed_data[3] = vertical_data;
 	packed_data[4] = '\0';
@@ -596,10 +634,24 @@ void TransmitPackedData(uint8_t dir, uint8_t horizon_data, uint8_t vertical_data
 	HAL_UART_Transmit(&huart1, packed_data, length, 1000);
 }
 
+// Function to flush the UART RX buffer
+void Flush_UART_RX_Buffer(UART_HandleTypeDef *huart) {
+    uint8_t dummy;
+    while (HAL_UART_Receive(huart, &dummy, 1, 10) == HAL_OK) {
+        // Discard received data
+    }
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-	if(huart == &huart1){
-		/*receive from LEGO hub char "s"*/
-		if ( (char)rx_data == 's') {
+	if (huart == &huart1) {
+		// Check if the received character is 'r' (request to send)
+//		Flush_UART_RX_Buffer(huart);
+		if ((char)rx_data == 'r') {
+			// Send acknowledgment 'a' (clear to send)
+			uint8_t ack = 'a';
+			HAL_UART_Transmit(&huart1, &ack, 1, 1000);
+
+			// Transmit the packed data
 			TransmitPackedData(line_direction, mapped_horizon_value, mapped_vertical_value);
 		}
 		HAL_UART_Receive_IT(&huart1, &rx_data, 1);
