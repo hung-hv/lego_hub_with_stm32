@@ -70,14 +70,17 @@ def GetUartData(message):
             0: has less than 2 characters.
             200: first character is not 's'.
     """
-    if message is not None and len(message) >= 2:
+    if message is not None and len(message) >= 4:
         if message[0] == 's':
             #todo: check if 's' not in [0] position
-            return ord(message[1])
+            direction = message[1]
+            horizon_data = ord(message[2])
+            vertical_data = ord(message[3])
+            return direction, horizon_data, vertical_data
         else:
-            return 200
+            return 0, 51, 51
     else:
-        return 0    
+        return 0, 51, 51    
 
 class Mecanum:
     def __init__(self, wheel_radius, robot_width, robot_length):
@@ -99,13 +102,13 @@ class Mecanum:
         # Initialize motors
         # self.motors = [Motor(port) for port in motor_ports]
         
-        self.motor_FR = Motor('A') #front right
+        self.motor_FR = Motor('F') #front right
         # self.motor_FR.start_at_power(50)
-        self.motor_FL = Motor('E') #front left
+        self.motor_FL = Motor('D') #front left
         # self.motor_FL.start_at_power(50)
-        self.motor_RR = Motor('D') #rear right
+        self.motor_RR = Motor('E') #rear right
         # self.motor_RR.start_at_power(50)
-        self.motor_RL = Motor('F') #rear left
+        self.motor_RL = Motor('A') #rear left
         # self.motor_RL.start_at_power(50)
 
     def setWheelSpeed(self, speeds):
@@ -184,23 +187,43 @@ class Mecanum:
 lego_hub = Uart(portB, 0, "a")
 hub = MSHub()
 print("init hub\n")
+direction = ''
+horizon_data = 0
+vertical_data = 0
 # Timer callback function
 def timer_callback(timer):
+    global direction, horizon_data, vertical_data
     hub.status_light.on('green')
     # print("[Timer] callback function called.")
-    lego_hub.write("s") #start receive value from STM32
-    val = lego_hub.read()
+    # lego_hub.write("r") #start receive value from STM32
+    # val = lego_hub.read()
+    # print("-> Received value:", val)
+    
+    # Send request to send 'r'
+    lego_hub.write('r')
+    # Receive ACK from STM32
+    ack = lego_hub.port.read(1)
+    if ack and ack == b'a':
+        val = lego_hub.read()
+        # print("-> Received value:", val)
+        # Process the received value
+        direction, horizon_data, vertical_data = GetUartData(val)
+        # if direction is not None:
+        # print("direction: " + str(direction) + " horizon_data: " + str(horizon_data) + " vertical_data: " + str(vertical_data))
+        #     print(f"Received direction: {direction}")
+        #     print(f"horizontal: {horizon_data}")
+        #     print(f"vertical: {vertical_data}")
     # print("-> Received value:", val)
     # if val is not None:
-    LineValue = GetUartData(val)
-    print("[Data]:", LineValue)
-    pid_line_calculate(LineValue)
+    # LineValue = GetUartData(val)
+    # print("[Data]:", LineValue)
+    # pid_line_calculate(LineValue)
         # pico.write("hello there")
     # else:
         # print("No valid data received from pico sensor.")
         # timer.deinit()
 
-kp_line = 0.9
+kp_line = 1.3
 ki_line = 0.005
 kd_line = 0.6
 PID_line_control = 0
@@ -222,6 +245,30 @@ def pid_line_calculate(sensor_value):
     D_term_line = kd_line * (delta_e_line - prev_delta_e_line)/invert_samling_time_line
     PID_line_control = P_term_line + I_term_line + D_term_line
     print("[PID_line_control]:", PID_line_control)
+
+kp_vertical = 0.6
+ki_vertical = 0
+kd_vertical = 0.2
+PID_vertical_control = 0
+# sampling_time_line = 10
+# invert_samling_time_line = 1/sampling_time_line
+I_term_vertical = 0
+delta_e_vertical = 0
+prev_delta_e_vertical = 0
+
+def pid_vertical_calculate(sensor_value):
+    # global kp_line, ki_line, kd_line, PID_line_control, invert_samling_time_line, sampling_time_line, I_term_line, delta_e_line, prev_delta_e_line
+    global kp_vertical, ki_vertical, kd_vertical, PID_vertical_control, I_term_vertical, delta_e_vertical, prev_delta_e_vertical, invert_samling_time_line, sampling_time_line
+
+    prev_delta_e_vertical = delta_e_vertical
+
+    delta_e_vertical = 51 - sensor_value
+    print("[delta_e_vertical]:", delta_e_vertical)
+    P_term_line = kp_vertical * delta_e_vertical
+    I_term_vertical = I_term_vertical + (ki_vertical * delta_e_vertical * sampling_time_line)
+    D_term_line = kd_vertical * (delta_e_vertical - prev_delta_e_vertical)/invert_samling_time_line
+    PID_vertical_control = P_term_line + I_term_vertical + D_term_line
+    print("[PID_vertical_control]:", PID_vertical_control)
 
 # Timer2 callback function
 # rtc = machine.RTC()
@@ -307,7 +354,7 @@ robot_length = 0.5   # 30 cm
 
 # Initialize the Mecanum robot
 mecanum_robot = Mecanum(wheel_radius, robot_width, robot_length)
-
+direction_flag = 1
 while 1:
     # print("test!!!!\n")
     # Drive the robot forward
@@ -326,7 +373,59 @@ while 1:
 
     # #apply PID_control
     # print("PID_control: " + str(PID_control))
-    mecanum_robot.driveRobot(30, 0, 20)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+    speed = 40
+    
+    if (direction == 'h'):
+        direction_flag = 1
+        # pid_line_calculate(horizon_data)
+        # vertical_control = 0
+        # if (vertical_data > 51):
+        #     vertical_control = speed
+        # else:
+        #     vertical_control = -speed
+        # mecanum_robot.driveRobot(vertical_control, -PID_line_control, 0)
+    elif (direction == 'v'):
+        direction_flag = 0
+    #     pid_vertical_calculate(vertical_data)
+    #     horizon_control =0
+    #     if (horizon_data > 51):
+    #         horizon_control = speed
+    #     else:
+    #         horizon_control = -speed
+    #     mecanum_robot.driveRobot(PID_vertical_control, horizon_control, 0)
+    # else:
+    #     mecanum_robot.driveRobot(0, 0, 0)
+
+    if (direction_flag == 1):
+        pid_line_calculate(horizon_data)
+        vertical_control = 0
+        if (vertical_data > 51):
+            vertical_control = speed
+        else:
+            vertical_control = -speed
+        mecanum_robot.driveRobot(vertical_control, -PID_line_control, 0)
+    if (direction_flag == 0):
+        pid_vertical_calculate(vertical_data)
+        horizon_control =0
+        if (horizon_data > 51):
+            horizon_control = speed
+        else:
+            horizon_control = -speed
+        mecanum_robot.driveRobot(PID_vertical_control, horizon_control, 0)
+    #     pass
+    # if vertical_data == None:
+    #     vertical_data = 51
+    #     pid_vertical_calculate(vertical_data)
+    # else:
+    #     pid_vertical_calculate(vertical_data)
+    
+    # pid_vertical_calculate(vertical_data)
+    # print("vertical_data: " + str(vertical_data))   
+    # mecanum_robot.driveRobot(PID_vertical_control, 0, 0)
+
+    # mecanum_robot.driveRobot(30, 0, 0)
+    # mecanum_robot.driveRobot(30, 0, 20)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+    # print("PID_control: " + str(PID_line_control))
     mecanum_robot.getAllSpeeds()
     # utime.sleep(0)
 
