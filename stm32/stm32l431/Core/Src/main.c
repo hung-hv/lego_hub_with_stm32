@@ -35,8 +35,13 @@
 
 #define OFFSET_SENSOR 3550
 /*TODO: should be dynamic by sampling*/
-#define MIN_OFFSET 0
-#define MAX_OFFSET 70
+#define MIN_IR_VALUE 0
+#define MAX_IR_VALUE 70
+#define WEIGHTED_1 			1
+#define WEIGHTED_2 			2
+#define WEIGHTED_3 			3
+#define MAX_SUM_2_IR 		120
+#define MAX_SUM_ALL_IR 		(2*MAX_SUM_2_IR + MAX_IR_VALUE)
 
 /* USER CODE END PD */
 
@@ -143,6 +148,13 @@ int main(void)
 //		  break;
 //	  }
   }
+  for (int i =0; i < 5; i++) {
+	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+	  HAL_Delay(200);
+	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+	  HAL_Delay(200);
+  }
+
 
   HAL_Delay(1000);
 
@@ -519,8 +531,8 @@ int16_t ProcessLineSensor(void) {
 //	sum_after_offset = 0;
 	for (int i = 0; i<16; i++) {
 		after_offset[i] = adc_buffer[i] - OFFSET_SENSOR;
-		if (after_offset[i] < MIN_OFFSET) after_offset[i] = MIN_OFFSET;
-		if (after_offset[i] > MAX_OFFSET) after_offset[i] = MAX_OFFSET;
+		if (after_offset[i] < MIN_IR_VALUE) after_offset[i] = MIN_IR_VALUE;
+		if (after_offset[i] > MAX_IR_VALUE) after_offset[i] = MAX_IR_VALUE;
 //		sum_after_offset = sum_after_offset + after_offset[i];
 		if (after_offset[i] != 0)  {
 			working_sensor_total++;
@@ -532,11 +544,23 @@ int16_t ProcessLineSensor(void) {
 //	if (working_sensor_horizontal > working_sensor_vertical) line_direction = 0;
 //	if (working_sensor_horizontal < working_sensor_vertical) line_direction = 1;
 
+
+	/***********************CALCULATE FOR HORIZONTAL***************************/
 	if (working_sensor_horizontal <=3 && working_sensor_horizontal >= 1) {
-		horizontal_value = -(after_offset[0]*(-5) + after_offset[1]*(-2) + after_offset[2]*(-1)
-						 + after_offset[5]*(1) + after_offset[6]*(2) + after_offset[7]*(5));
-		if (horizontal_value > 500) horizontal_value = 500;
-		if (horizontal_value < -500) horizontal_value = -500;
+		/*horizon sensor array is in line*/
+		if (working_sensor_horizontal == 1) {
+			/*reach the boundary*/
+			if (after_offset[0] > 0) horizontal_value = -MAX_SUM_ALL_IR;
+			if (after_offset[7] > 0) horizontal_value = MAX_SUM_ALL_IR;
+		}
+		else {
+			/*other position in line*/
+			horizontal_value = 	WEIGHTED_3*(after_offset[7]-after_offset[0]) +
+								WEIGHTED_2*(after_offset[6]-after_offset[1]) +
+								WEIGHTED_1*(after_offset[5]-after_offset[2]);
+			if (horizontal_value >  MAX_SUM_ALL_IR) horizontal_value = MAX_SUM_ALL_IR;
+			if (horizontal_value < -MAX_SUM_ALL_IR) horizontal_value = -MAX_SUM_ALL_IR;
+		}
 		last_horizon_value = horizontal_value;
 		line_direction = 0;
 	}
@@ -545,19 +569,34 @@ int16_t ProcessLineSensor(void) {
 		horizontal_value = last_horizon_value;
 		line_direction = 2;
 	}
-	if (working_sensor_vertical <=3 && working_sensor_vertical >= 1) {
-		vertical_value = -(after_offset[8]*(-5) + after_offset[9]*(-2) + after_offset[10]*(-1)
-							 + after_offset[13]*(1) + after_offset[14]*(2) + after_offset[15]*(5));
-		if (vertical_value > 500) vertical_value = 500;
-		if (vertical_value < -500) vertical_value = -500;
-		last_vertical_value = vertical_value;
-		line_direction = 1;
+
+	/***********************CALCULATE FOR VERTICAL***************************/
+	if (line_direction != 0) {
+		/*horizontal sensor not in line*/
+		if (working_sensor_vertical <=3 && working_sensor_vertical >= 1) {
+			/*vertical sensor array is in line*/
+			if (working_sensor_vertical == 1) {
+				/*reach the boundary*/
+				if (after_offset[8]  > 0) vertical_value = -MAX_SUM_ALL_IR;
+				if (after_offset[15] > 0) vertical_value = MAX_SUM_ALL_IR;
+			} else {
+				/*other position in line*/
+				vertical_value = 	WEIGHTED_3*(after_offset[15]-after_offset[8]) +
+									WEIGHTED_2*(after_offset[14]-after_offset[9]) +
+									WEIGHTED_1*(after_offset[13]-after_offset[10]);
+				if (vertical_value >  MAX_SUM_ALL_IR) vertical_value = MAX_SUM_ALL_IR;
+				if (vertical_value < -MAX_SUM_ALL_IR) vertical_value = -MAX_SUM_ALL_IR;
+			}
+			last_vertical_value = vertical_value;
+			line_direction = 1;
+		}
+		else {
+			/*out of line or to many sensors in 1 line*/
+			vertical_value = last_vertical_value;
+			line_direction = 2;
+		}
 	}
-	else {
-		/*out of line or to many sensors in 1 line*/
-		vertical_value = last_vertical_value;
-		line_direction = 2;
-	}
+
 //	else {
 //		line_direction = 2;
 //	}
@@ -660,9 +699,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-	ProcessLineSensor();
-	mapped_horizon_value = map(horizontal_value, -500, 500, 1, 101);
-	mapped_vertical_value = map(vertical_value, -500, 500, 1, 101);
+//	ProcessLineSensor();
+	mapped_horizon_value = map(horizontal_value, -MAX_SUM_ALL_IR, MAX_SUM_ALL_IR, 1, 101);
+	mapped_vertical_value = map(vertical_value, -MAX_SUM_ALL_IR, MAX_SUM_ALL_IR, 1, 101);
 
 }
 

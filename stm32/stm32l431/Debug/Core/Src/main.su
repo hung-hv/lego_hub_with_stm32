@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ../Core/Src/main.c:102:5:main	8	static
 ../Core/Src/main.c:172:6:SystemClock_Config	96	static
 ../Core/Src/main.c:221:13:MX_ADC1_Init	32	static
@@ -11,3 +12,18 @@
 ../Core/Src/main.c:645:6:HAL_UART_RxCpltCallback	24	static
 ../Core/Src/main.c:661:6:HAL_ADC_ConvCpltCallback	24	static
 ../Core/Src/main.c:675:6:Error_Handler	4	static,ignoring_inline_asm
+=======
+../Core/Src/main.c:107:5:main	16	static
+../Core/Src/main.c:184:6:SystemClock_Config	96	static
+../Core/Src/main.c:233:13:MX_ADC1_Init	32	static
+../Core/Src/main.c:426:13:MX_USART1_UART_Init	8	static
+../Core/Src/main.c:459:13:MX_DMA_Init	16	static
+../Core/Src/main.c:477:13:MX_GPIO_Init	48	static
+../Core/Src/main.c:505:9:map	24	static
+../Core/Src/main.c:522:9:ProcessLineSensor	16	static
+../Core/Src/main.c:660:6:TransmitPackedData	16	static
+../Core/Src/main.c:677:6:Flush_UART_RX_Buffer	24	static
+../Core/Src/main.c:684:6:HAL_UART_RxCpltCallback	24	static
+../Core/Src/main.c:700:6:HAL_ADC_ConvCpltCallback	24	static
+../Core/Src/main.c:714:6:Error_Handler	4	static,ignoring_inline_asm
+>>>>>>> develop
