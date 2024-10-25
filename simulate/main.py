@@ -34,14 +34,17 @@ class Sensor:
         return self.value
 
 # Create the figure and the initial points
-fig, ax = plt.subplots(figsize=(12, 10))  # Increase the figure size
+# fig, ax = plt.subplots(figsize=(12, 10))  # Increase the figure size
+fig, (ax, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+
+
 x = np.linspace(0, 2 * np.pi, 400)  # Full circle range
 y = sine_wave(x)
 curve_line, = ax.plot(x, y, label='Curve')  # Plot the curve
 
 # Initialize two arrays of 8 sensors each
 sensors_vertical = [Sensor(ax, 0, 0, 'ro') for _ in range(8)]  # Initial points at (0, 0)
-sensors_horizontal = [Sensor(ax, 2, 0, 'bo') for _ in range(8)]  # Initial points at (2, 0)
+sensors_horizontal = [Sensor(ax, 0, 0, 'bo') for _ in range(8)]  # Initial points at (0, 0)
 ax.set_xlim(-2, 2)
 ax.set_ylim(-2, 2)
 ax.set_xlabel('X')
@@ -105,6 +108,22 @@ radius_slider = Slider(
 axpos_select = fig.add_axes([0.025, 0.5, 0.15, 0.15])
 select_box = RadioButtons(axpos_select, ('Sine Wave', 'Circle'))
 
+# New plot setup
+ax2.set_xlim(0, 101)
+ax2.set_ylim(0, 101)
+ax2.set_xlabel('Horizontal Sensor Value')
+ax2.set_ylabel('Vertical Sensor Value')
+
+def update_sensor_plot(horizontal_values, vertical_values):
+    ax2.clear()
+    ax2.set_xlim(0, 101)
+    ax2.set_ylim(0, 101)
+    ax2.set_xlabel('Horizontal Sensor Value')
+    ax2.set_ylabel('Vertical Sensor Value')
+    ax2.plot(horizontal_values, 0, 'bo')  # Plot horizontal sensor values
+    ax2.plot(0, vertical_values, 'ro')  # Plot vertical sensor values
+    plt.draw()
+
 # Timer variable to debounce the update function
 update_timer = None
 
@@ -132,37 +151,6 @@ def perform_update():
         x_circle, y_circle = circle_points(radius=radius)
         curve_line.set_xdata(x_circle)
         curve_line.set_ydata(y_circle)
-    
-    # # Update vertical sensors
-    # for i, sensor in enumerate(sensors_vertical):
-    #     sensor.set_position(x_val, y_val - i * 0.1)  # Offset each sensor vertically, starting from the top
-    #     if curve_type == 'Sine Wave':
-    #         distance = abs(y_val - i * 0.1 - sine_wave(x_val, shift_slider.val, freq_slider.val, amp_slider.val))
-    #     else:
-    #         distance = abs(np.sqrt(x_val**2 + (y_val - i * 0.1)**2) - radius_slider.val)
-        
-    #     if distance <= 0.1:
-    #         sensor.set_color('black')
-    #         sensor.set_value(70 - (distance / 0.1) * 70)
-    #     else:
-    #         sensor.set_color('red')
-    #         sensor.set_value(0)
-
-    # # Update horizontal sensors
-    # for i, sensor in enumerate(sensors_horizontal):
-    #     sensor.set_position(x_val - i * 0.1, y_val)  # Offset each sensor horizontally, starting from the right
-    #     if curve_type == 'Sine Wave':
-    #         distance = abs(y_val - sine_wave(x_val - i * 0.1, shift_slider.val, freq_slider.val, amp_slider.val))
-    #     else:
-    #         distance = abs(np.sqrt((x_val - i * 0.1)**2 + y_val**2) - radius_slider.val)
-        
-    #     if distance <= 0.1:
-    #         sensor.set_color('black')
-    #         sensor.set_value(70 - (distance / 0.1) * 70)
-    #     else:
-    #         sensor.set_color('blue')
-    #         sensor.set_value(0)
-    
     # Calculate weighted averages
     vertical_sensor_values = [sensor.get_value() for sensor in sensors_vertical]
     horizontal_sensor_values = [sensor.get_value() for sensor in sensors_horizontal]
@@ -182,6 +170,8 @@ def perform_update():
     
     ax.set_xlim(-2 * scale, 2 * scale)
     ax.set_ylim(-2 * scale, 2 * scale)
+
+    update_sensor_plot(horizontal_weighted_avg, vertical_weighted_avg)
     fig.canvas.draw_idle()
 
 working_horizon_sensor = 0
@@ -189,6 +179,50 @@ working_vertical_sensor = 0
 working_sensors = 0
 last_weighted_sum = 0
 MAXIMUM_SUM = 310
+# def calculate_weighted_average(sensor_values):
+#     """
+#     Calculate the weighted average of the sensor values, scaled to range from 1 to 101.
+    
+#     Args:
+#     sensor_values (list of float): The values of the sensors.
+    
+#     Returns:
+#     float: The weighted average of the sensor values, scaled to range from 1 to 101.
+#     """
+#     global working_sensors, last_weighted_sum
+#     working_sensors = 0
+#     for i in range(8):
+#         if sensor_values[i] != 0:
+#             working_sensors += 1
+#     weight_1 = 1
+#     weight_2 = 2
+#     weight_3 = 3
+#     vertical_sensor_values = [sensor.get_value() for sensor in sensors_vertical]
+#     horizontal_sensor_values = [sensor.get_value() for sensor in sensors_horizontal]
+#     print("Vertical Sensor Values:", vertical_sensor_values)
+#     print("Horizontal Sensor Values:", horizontal_sensor_values)
+#     # sensor_sum_values = sum(sensor_values)
+#     if working_sensors > 0:
+#         if working_sensors == 1:
+#             #in boundry
+#             if sensor_values[0] != 0:
+#                 weighted_sum = -MAXIMUM_SUM
+#             if sensor_values[7] != 0:
+#                 weighted_sum = MAXIMUM_SUM
+#         else:
+#             #in other case
+#             weighted_sum = (weight_3*(sensor_values[7] - sensor_values[0]) +
+#                             weight_2*(sensor_values[6] - sensor_values[1]) +
+#                             weight_1*(sensor_values[5] - sensor_values[2]))
+#             if weighted_sum > MAXIMUM_SUM:
+#                 weighted_sum = MAXIMUM_SUM
+#             if weighted_sum < -MAXIMUM_SUM:
+#                 weighted_sum = -MAXIMUM_SUM
+#         last_weighted_sum = weighted_sum
+#     else:
+#         weighted_sum = last_weighted_sum
+#     return weighted_sum
+
 def calculate_weighted_average(sensor_values):
     """
     Calculate the weighted average of the sensor values, scaled to range from 1 to 101.
@@ -199,40 +233,38 @@ def calculate_weighted_average(sensor_values):
     Returns:
     float: The weighted average of the sensor values, scaled to range from 1 to 101.
     """
-    global working_sensors, last_weighted_sum
     working_sensors = 0
-    for i in range(8):
+    weighted_sum = 0
+    total_weight = 0
+
+    # Define weights for each sensor position
+    weights = [8, 7, 6, 5, 4, 3, 2, 1]
+
+    # Calculate the weighted sum and count working sensors
+    for i in range(len(sensor_values)):
         if sensor_values[i] != 0:
             working_sensors += 1
-    weight_1 = 1
-    weight_2 = 2
-    weight_3 = 3
+            weighted_sum += sensor_values[i] * weights[i]
+            total_weight += sensor_values[i]
+
+    # Calculate the weighted average
+    if working_sensors > 0:
+        weighted_average = weighted_sum / total_weight
+        # Scale the weighted average to range from 1 to 101
+        scaled_weighted_average = 1 + (weighted_average - 1) * (100 / (len(weights) - 1))
+    else:
+        # weighted_average = 0
+        scaled_weighted_average = 0
+
+    # Scale the weighted average to range from 1 to 101
+    # scaled_weighted_average = 1 + (weighted_average - 1) * (100 / (len(weights) - 1))
+
     vertical_sensor_values = [sensor.get_value() for sensor in sensors_vertical]
     horizontal_sensor_values = [sensor.get_value() for sensor in sensors_horizontal]
     print("Vertical Sensor Values:", vertical_sensor_values)
     print("Horizontal Sensor Values:", horizontal_sensor_values)
-    # sensor_sum_values = sum(sensor_values)
-    if working_sensors > 0:
-        if working_sensors == 1:
-            #in boundry
-            if sensor_values[0] != 0:
-                weighted_sum = -MAXIMUM_SUM
-            if sensor_values[7] != 0:
-                weighted_sum = MAXIMUM_SUM
-        else:
-            #in other case
-            weighted_sum = (weight_3*(sensor_values[7] - sensor_values[0]) +
-                            weight_2*(sensor_values[6] - sensor_values[1]) +
-                            weight_1*(sensor_values[5] - sensor_values[2]))
-            if weighted_sum > MAXIMUM_SUM:
-                weighted_sum = MAXIMUM_SUM
-            if weighted_sum < -MAXIMUM_SUM:
-                weighted_sum = -MAXIMUM_SUM
-        last_weighted_sum = weighted_sum
-    else:
-        weighted_sum = last_weighted_sum
-    return weighted_sum
-        
+
+    return scaled_weighted_average
 
 def on_mouse_move(event):
     global x_val, y_val
@@ -249,22 +281,22 @@ def on_mouse_move(event):
             
             if distance <= 0.1:
                 sensor.set_color('green')
-                sensor.set_value(70 - (distance / 0.1) * 70)
+                sensor.set_value(int(70 - (distance / 0.1) * 70))
             else:
                 sensor.set_color('red')
                 sensor.set_value(0)
 
         # Update horizontal sensors
         for i, sensor in enumerate(sensors_horizontal):
-            sensor.set_position(x_val - i * 0.1, y_val)  # Offset each sensor horizontally, starting from the right
+            sensor.set_position(x_val - i * 0.1, y_val + 0.1)  # Offset each sensor horizontally, starting from the right and shift y by 0.1
             if curve_type == 'Sine Wave':
-                distance = abs(y_val - sine_wave(x_val - i * 0.1, shift_slider.val, freq_slider.val, amp_slider.val))
+                distance = abs(y_val + 0.1 - sine_wave(x_val - i * 0.1, shift_slider.val, freq_slider.val, amp_slider.val))
             else:
-                distance = abs(np.sqrt((x_val - i * 0.1)**2 + y_val**2) - radius_slider.val)
+                distance = abs(np.sqrt((x_val - i * 0.1)**2 + (y_val + 0.1)**2) - radius_slider.val)
             
             if distance <= 0.1:
                 sensor.set_color('green')
-                sensor.set_value(70 - (distance / 0.1) * 70)
+                sensor.set_value(int(70 - (distance / 0.1) * 70))
             else:
                 sensor.set_color('blue')
                 sensor.set_value(0)
