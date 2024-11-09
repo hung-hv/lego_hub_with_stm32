@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\vieth\Documents\stm32\Lego_with_stm32\lego_hub_with_stm32\simulate\env
+set VIRTUAL_ENV=C:\Users\HAU5HC\Documents\stm32\Lego_with_stm32\lego_hub_with_stm32\simulate\env
 
 if not defined PROMPT set PROMPT=$P$G
 
