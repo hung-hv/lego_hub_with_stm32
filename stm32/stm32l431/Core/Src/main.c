@@ -147,7 +147,7 @@ int main(void)
 //  uint32_t start_time = HAL_GetTick();
 //  uint32_t timeout = 5000; // 5 seconds timeout
   // Loop to continuously check for 'r' character with timeout
-  HAL_UART_Receive_IT(&huart1, &rx_buffer, RX_BUFFER_SIZE);
+  HAL_UART_Receive_IT(&huart1, rx_buffer, RX_BUFFER_SIZE);
 
   for (int i =0; i < 3; i++) {
   	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
@@ -610,15 +610,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 	if (huart == &huart1) {
 		// Check if received data matches "rq"
 		if (strncmp((char *)rx_buffer, "rq", (size_t)2) == 0) {
+//			HAL_Delay(10);
 			// Transmit the packed data
 			if (READY_FLAG == 1) {
 				TransmitPackedData(1, mapped_horizon_value);
 			} else if(READY_FLAG == 0) {
 				TransmitPackedData(0, mapped_horizon_value);
 			}
-
+//			/*clear the buffer*/
+//			rx_buffer[0] = '0';
+//			rx_buffer[1] = '0';
 		}
-		HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+		HAL_UART_Receive_IT(&huart1, rx_buffer, RX_BUFFER_SIZE);
 	}
 }
 

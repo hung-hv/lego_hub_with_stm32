@@ -5,24 +5,10 @@ import machine
 from hub import motion
 from hub import port
 
-LineValue = 0
 portB = port.B
-portC = port.C
-"""
-MODE_DEFAULT = 0
-MODE_FULL_DUPLEX = 1
-MODE_HALF_DUPLEX = 2
-MODE_GPIO = 3
-"""
-portB.mode(1)
+portB.mode(1)   #MODE_DEFAULT = 0|MODE_FULL_DUPLEX = 1|MODE_HALF_DUPLEX = 2|MODE_GPIO = 3
 utime.sleep_ms(500)
 portB.baud(9600)
-
-portC.mode(1)
-utime.sleep_ms(500)
-portC.baud(9600)
-
-
 class Uart:
     # initialize
     def __init__(self, port, timeOut: int, id: str):
@@ -65,8 +51,6 @@ class Uart:
     def write(self, str):
         self.port.write(str)
 
-FLAG_ROBOT_RUN = 0 # 0-stop robot, 1-robot run
-
 def GetUartData(message):
     """
     Retrieves data from UART based on the given message.
@@ -78,22 +62,22 @@ def GetUartData(message):
             200: first character is not 's'.
     """
     global FLAG_ROBOT_RUN
-    if val and isinstance(val, str):
-        if message is not None and len(message) >= 4:
-            if message[0] == 's':
-                if message[1] == 'f': #start of frame
-                    if message[3] == 'r':
-                        horizon_data = ord(message[2])
-                        return horizon_data
-                    else:
-                        return 111
-                else: 
+    if message is not None and isinstance(message, str) and len(message) >= 4:
+        if message[0] == 's':
+            if message[1] == 'f': #start of frame
+                if message[3] == 'r':
+                    horizon_data = ord(message[2])
+                    return horizon_data
+                else:
                     return 111
-            else:
+            else: 
                 return 111
         else:
             return 111
+    else:
+        return 111
 
+FLAG_ROBOT_RUN = 0 # 0-stop robot, 1-robot run
 class Mecanum:
     def __init__(self, wheel_radius, robot_width, robot_length):
         self.wheel_radius = wheel_radius
@@ -199,7 +183,6 @@ class Mecanum:
 kp_line = 0.9
 ki_line = 0.005
 kd_line = 0.6
-# PID_line_control = 0
 sampling_time_line = 10
 invert_samling_time_line = 1/sampling_time_line
 I_term_line = 0
@@ -211,7 +194,7 @@ def pid_line_calculate(sensor_value):
 
     prev_delta_e_line = delta_e_line
 
-    delta_e_line = 51 - sensor_value
+    delta_e_line = 51 - sensor_value #middle value
     print("[delta_e_line]:", delta_e_line)
     P_term_line = kp_line * delta_e_line
     I_term_line = I_term_line + (ki_line * delta_e_line * sampling_time_line)
@@ -220,8 +203,8 @@ def pid_line_calculate(sensor_value):
     print("[PID_line_control]:", PID_line_control)
     return PID_line_control
 
-# Initialize the hub
-lego_hub = Uart(portC, 10, "a")
+# Initialize the hub and uart for portB
+lego_hub = Uart(portB, 10, "a")
 hub = MSHub()
 print("init hub\n")
 FLAG_UART_ACTIVE = 0
@@ -229,10 +212,7 @@ FLAG_UART_ACTIVE = 0
 def timer_callback(timer):
     global FLAG_UART_ACTIVE
     hub.status_light.on('green')
-    FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart
-    # lego_hub.write("rq")
-    # val = lego_hub.read()
-    # print(val)
+    FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart data
 
 # Create a timer object
 timer = machine.Timer(-1)
@@ -247,7 +227,6 @@ def visualize_horizon_data(horizon_data):
     min_value = 1
     max_value = 101
     bar_length = 20  # Length of the visual bar
-
     # Handle error value (111) and invalid data
     if horizon_data == 111:
         print("Error: Invalid horizon data")
@@ -258,41 +237,36 @@ def visualize_horizon_data(horizon_data):
     else:
         # Map horizon_data (1 to 101) to the range of 0 to bar_length-1
         position = int((horizon_data - min_value) / (max_value - min_value) * (bar_length - 1))
-        
         # Create the visualization string
         bar = "-" * position + "X" + "-" * (bar_length - 1 - position)
-        
         # Print the visual bar
         print(bar)
 
 
 while 1:
-    lego_hub.write("rq")
-    if 1:
+    # lego_hub.write("rq")
+    # send and read data each sampling_time_line (ms)
+    if FLAG_UART_ACTIVE == 1:
         lego_hub.write("rq")
         val = lego_hub.read()
         horizon_data = GetUartData(val)
-        if horizon_data is not None and horizon_data < 111:
+        if horizon_data < 111:
             FLAG_ROBOT_RUN = 1 #run 
             visualize_horizon_data(horizon_data)
-            hub.status_light.on('red')
             PID_value = pid_line_calculate(horizon_data)
-            mecanum_robot.driveRobot(30, 0, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+            hub.status_light.on('green')
         else:
             FLAG_ROBOT_RUN = 0 #stop the robot
-        print(FLAG_ROBOT_RUN)
-        FLAG_UART_ACTIVE = 0 #deactivate, waiting timer turn it on
-            
-    # #apply PID_control
-    # print("PID_control: " + str(PID_control))
-    # mecanum_robot.driveRobot(30, 0, 20)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+            hub.status_light.on('red')
+        print(horizon_data)
+    FLAG_UART_ACTIVE = 0 #deactivate, waiting timer turn it on
+
     if FLAG_ROBOT_RUN == 1:
-        hub.status_light.on('red')
-        PID_value = pid_line_calculate(horizon_data)
-        mecanum_robot.driveRobot(30, 0, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+        pass
+        # mecanum_robot.driveRobot(30, 0, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
         # mecanum_robot.getAllSpeeds()
     else:
-        #wrong value of could not receive value from uart
+    #wrong value of could not receive value from uart
         mecanum_robot.driveRobot(0, 0, 0)
 
 # Stop the robot
