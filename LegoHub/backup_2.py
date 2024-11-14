@@ -7,7 +7,6 @@ from hub import port
 
 LineValue = 0
 portB = port.B
-portC = port.C
 """
 MODE_DEFAULT = 0
 MODE_FULL_DUPLEX = 1
@@ -17,10 +16,6 @@ MODE_GPIO = 3
 portB.mode(1)
 utime.sleep_ms(500)
 portB.baud(9600)
-
-portC.mode(1)
-utime.sleep_ms(500)
-portC.baud(9600)
 
 
 class Uart:
@@ -73,26 +68,28 @@ def GetUartData(message):
     Args:
         message (str): The message received from UART.
     Returns:
-        int: [1:101] The data retrieved from UART. 111 is not valid value
+        int: [1:101] The data retrieved from UART.
             0: has less than 2 characters.
             200: first character is not 's'.
     """
     global FLAG_ROBOT_RUN
-    if val and isinstance(val, str):
-        if message is not None and len(message) >= 4:
-            if message[0] == 's':
-                if message[1] == 'f': #start of frame
-                    if message[3] == 'r':
-                        horizon_data = ord(message[2])
-                        return horizon_data
-                    else:
-                        return 111
-                else: 
-                    return 111
-            else:
-                return 111
+    frame_type = ''
+    horizon_data = 0
+
+    if message is not None and len(message) >= 4:
+        if message[0] == 's':
+            if message[1] == 'f': #start of frame
+                frame_type = message[2]
+                if frame_type == 'r':
+                    horizon_data = ord(message[3])
+                elif frame_type == 'n':
+                    # FLAG_ROBOT_RUN = 0 #stop the robot
+                    pass
+                return frame_type, horizon_data
         else:
-            return 111
+            return 'n', 111 #unknow
+    else:
+        return 'n', 111 #unknow
 
 class Mecanum:
     def __init__(self, wheel_radius, robot_width, robot_length):
@@ -183,6 +180,7 @@ class Mecanum:
         L = self.robot_length
         W = self.robot_width
         R = self.wheel_radius
+
         # Calculate wheel speeds
         # L_and_R = 1
         self.wheel_speeds[0] = (1/R) * (vx + vy + (L + W) * omega)  # Front right
@@ -194,7 +192,37 @@ class Mecanum:
         # Set motor speeds
         self.setWheelSpeed(self.wheel_speeds)
 
-
+# Initialize the hub
+lego_hub = Uart(portB, 0, "a")
+hub = MSHub()
+print("init hub\n")
+FLAG_UART_ACTIVE = 0
+# Timer callback function
+def timer_callback(timer):
+    global FLAG_UART_ACTIVE
+    hub.status_light.on('green')
+    FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart
+    # # print("[Timer] callback function called.")
+    # # lego_hub.write("r") #start receive value from STM32
+    # # val = lego_hub.read()
+    # # print("-> Received value:", val)
+    
+    # # Send request to send 'r'
+    # lego_hub.write('r')
+    # # Receive ACK from STM32
+    # ack = lego_hub.port.read(1)
+    # if ack and ack == b'a':
+    #     val = lego_hub.read()
+    #     print("-> Received value:", val)
+    #     # Process the received value
+    #     direction, horizon_data, vertical_data = GetUartData(val)
+    #     # if direction is not None:
+    #     print(direction)
+    #     print(horizon_data)
+    #     print(vertical_data)
+    #     #     print(f"Received direction: {direction}")
+    #     #     print(f"horizontal: {horizon_data}")
+    #     #     print(f"vertical: {vertical_data}")
 
 kp_line = 0.9
 ki_line = 0.005
@@ -220,27 +248,90 @@ def pid_line_calculate(sensor_value):
     print("[PID_line_control]:", PID_line_control)
     return PID_line_control
 
-# Initialize the hub
-lego_hub = Uart(portC, 10, "a")
-hub = MSHub()
-print("init hub\n")
-FLAG_UART_ACTIVE = 0
-# Timer callback function
-def timer_callback(timer):
-    global FLAG_UART_ACTIVE
-    hub.status_light.on('green')
-    FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart
-    # lego_hub.write("rq")
-    # val = lego_hub.read()
-    # print(val)
+# Timer2 callback function
+# rtc = machine.RTC()
+timer_us = 0
+
+#reset the yaw pitch roll
+motion.yaw_pitch_roll(0)
+#global variable
+delta_e = 0
+kp = 0.8
+
+ki = 0.008
+# ki = 0.004
+# kd = 32
+kd = 20
+PID_control = 0
+sampling_time = 1
+invert_samling_time = 1/sampling_time
+I_term = 0
+# prev_I_term = 0
+
+# Timer2 callback function for calculate PID loop
+def timer_callback2(timer2):
+    # print("[Timer2] callback function called.")
+    global timer_us
+    global PID_control
+    global delta_e
+    global invert_samling_time
+    global sampling_time
+    global I_term
+
+    prev_delta_e = delta_e
+
+    start_time = utime.ticks_us()
+
+    #get delta_e
+    delta_e = 0 - motion.yaw_pitch_roll()[0]
+    # print("[delta_e]: \n" + str(delta_e))
+    # if (delta_e > 0):
+    #     print("                                                                ----\n")
+    # if (delta_e < 0):
+    #     print("                                 ++++                               \n")
+    # if (delta_e == 0):
+    #     print("                                                 ----               \n")
+    # hub.light_matrix.write(str(delta_e))
+    #calculate PID controller
+    P_term = kp * delta_e
+    D_term = kd * (delta_e - prev_delta_e)/invert_samling_time
+    I_term = I_term + (ki * delta_e * sampling_time)
+    if (I_term > 15):
+        I_term = 15
+    if (I_term < -15):
+        I_term = -15
+    if (delta_e == 0):
+        I_term = 0
+    # print("P_term: " + str(P_term) + " D_term: " + str(D_term) + " I_term: " + str(I_term))
+    PID_control = - (P_term + D_term + I_term)
+    if (delta_e > 0 and PID_control > 10):
+        PID_control = 0
+    if (delta_e < 0 and PID_control < 10):
+        PID_control = 0
+    # print("PID_control: " + str(PID_control))
+
+    # print("yaw: " + str(rotations[0]) + " pitch: " + str(rotations[1]) + " roll: " + str(rotations[2]))
+
+    # print("Time elapsed (us):", start_time - timer_us)
+    timer_us = start_time
 
 # Create a timer object
 timer = machine.Timer(-1)
+# timer2 = machine.Timer(-1)
 # Initialize the timer to call the callback function every 0.1ms
 timer.init(period=sampling_time_line, mode=machine.Timer.PERIODIC, callback=timer_callback)
+# timer2.init(period=sampling_time, mode=machine.Timer.PERIODIC, callback=timer_callback2)
+
+# Example usage
+wheel_radius = 1  # 5 cm
+robot_width = 0.5    # 20 cm
+robot_length = 0.5   # 30 cm
+# motor_ports = ['C', 'D', 'E', 'F']  # Motor ports
+
+
 
 # Initialize the Mecanum robot
-mecanum_robot = Mecanum(1, 1, 1)
+mecanum_robot = Mecanum(wheel_radius, robot_width, robot_length)
 
 def visualize_horizon_data(horizon_data):
     # Define the maximum and minimum values for horizon_data
@@ -267,20 +358,15 @@ def visualize_horizon_data(horizon_data):
 
 
 while 1:
-    lego_hub.write("rq")
-    if 1:
-        lego_hub.write("rq")
+    if FLAG_UART_ACTIVE == 1:
+        lego_hub.write('rq')
         val = lego_hub.read()
-        horizon_data = GetUartData(val)
-        if horizon_data is not None and horizon_data < 111:
-            FLAG_ROBOT_RUN = 1 #run 
-            visualize_horizon_data(horizon_data)
-            hub.status_light.on('red')
-            PID_value = pid_line_calculate(horizon_data)
-            mecanum_robot.driveRobot(30, 0, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
-        else:
+        frame_type, horizon_data = GetUartData(val)
+        if frame_type == 'n':
             FLAG_ROBOT_RUN = 0 #stop the robot
-        print(FLAG_ROBOT_RUN)
+        elif frame_type == 'r':
+            FLAG_ROBOT_RUN = 1 #run 
+        visualize_horizon_data(horizon_data)
         FLAG_UART_ACTIVE = 0 #deactivate, waiting timer turn it on
             
     # #apply PID_control
@@ -289,7 +375,7 @@ while 1:
     if FLAG_ROBOT_RUN == 1:
         hub.status_light.on('red')
         PID_value = pid_line_calculate(horizon_data)
-        mecanum_robot.driveRobot(30, 0, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+        mecanum_robot.driveRobot(30, 0, PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
         # mecanum_robot.getAllSpeeds()
     else:
         #wrong value of could not receive value from uart
