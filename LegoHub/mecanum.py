@@ -9,6 +9,11 @@ portB = port.B
 portB.mode(1)   #MODE_DEFAULT = 0|MODE_FULL_DUPLEX = 1|MODE_HALF_DUPLEX = 2|MODE_GPIO = 3
 utime.sleep_ms(500)
 portB.baud(9600)
+
+# # Initialize UART on port A
+# portB = port.B.device
+# portB.mode(1)  # UART mode
+# portB.baud(9600)
 class Uart:
     # initialize
     def __init__(self, port, timeOut: int, id: str):
@@ -25,7 +30,7 @@ class Uart:
         while 1:
             # print("wating TX data...")
             byte_read = self.port.read(1)  # Read one byte over UART lines
-            # print("-> byte read: ", byte_read)
+            print("-> byte read: ", byte_read)
             
             if byte_read:
                 if byte_read == b"\0":
@@ -71,11 +76,11 @@ def GetUartData(message):
                 else:
                     return 111
             else: 
-                return 111
+                return 222
         else:
-            return 111
+            return 333
     else:
-        return 111
+        return 444
 
 FLAG_ROBOT_RUN = 0 # 0-stop robot, 1-robot run
 class Mecanum:
@@ -158,10 +163,8 @@ class Mecanum:
     def driveRobot(self, vx, vy, omega):
         """
         Drives the robot with given velocities.
-        
         Args:
             vx (float): Velocity in the x direction.
-            vy (float): Velocity in the y direction.
             omega (float): Angular velocity.
         """
         L = self.robot_length
@@ -173,16 +176,46 @@ class Mecanum:
         self.wheel_speeds[1] = (1/R) * (vx - vy - (L + W) * omega)  # Front left
         self.wheel_speeds[2] = (1/R) * (vx - vy + (L + W) * omega)  # Rear right
         self.wheel_speeds[3] = (1/R) * (vx + vy - (L + W) * omega)  # Rear left
-        
-
         # Set motor speeds
         self.setWheelSpeed(self.wheel_speeds)
 
+    def driveRobotSimple(self, vx, PID):
+        """
+        Drives the robot with given velocities.
+        Args:
+            vx (float): Velocity in the x direction.
+            omega (float): Angular velocity.
+        """
+        # left_value = 0
+        # right_value = 0
+        # if PID > 0: 
+        #     left_value = PID
+        #     right_value = 0
+        # if PID < 0:
+        #     right_value = -PID
+        #     left_value = 0
+        
 
+        # self.wheel_speeds[0] = vx + left_value  # Front right
+        # self.wheel_speeds[2] = vx + left_value  # Rear right
+        # self.wheel_speeds[1] = vx + right_value  # Front left
+        # self.wheel_speeds[3] = vx + right_value  # Rear left
+        if PID < 0: 
+            self.wheel_speeds[0] = vx + PID  # Front right
+            self.wheel_speeds[2] = vx + PID  # Rear right
+            self.wheel_speeds[1] = vx   # Front left
+            self.wheel_speeds[3] = vx   # Rear left
+        else:
+            self.wheel_speeds[0] = vx   # Front right
+            self.wheel_speeds[2] = vx   # Rear right
+            self.wheel_speeds[1] = vx - PID  # Front left
+            self.wheel_speeds[3] = vx - PID  # Rear left
+        # Set motor speeds
+        self.setWheelSpeed(self.wheel_speeds)
 
-kp_line = 0.9
-ki_line = 0.005
-kd_line = 0.6
+kp_line = 1.5
+ki_line = 0 #0.005
+kd_line = 0 #0.6
 sampling_time_line = 10
 invert_samling_time_line = 1/sampling_time_line
 I_term_line = 0
@@ -204,15 +237,30 @@ def pid_line_calculate(sensor_value):
     return PID_line_control
 
 # Initialize the hub and uart for portB
-lego_hub = Uart(portB, 10, "a")
+lego_hub = Uart(portB, 0, "a")
 hub = MSHub()
 print("init hub\n")
 FLAG_UART_ACTIVE = 0
 # Timer callback function
 def timer_callback(timer):
-    global FLAG_UART_ACTIVE
-    hub.status_light.on('green')
-    FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart data
+    # global FLAG_UART_ACTIVE
+    # hub.status_light.on('green')
+    # FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart data
+    lego_hub.write("rq")
+    val = lego_hub.read()
+    horizon_data = GetUartData(val)
+    if horizon_data < 111:
+        # FLAG_ROBOT_RUN = 1 #run 
+        visualize_horizon_data(horizon_data)
+        PID_value = pid_line_calculate(horizon_data)
+        hub.status_light.on('green')
+        lego_hub.write("ef")
+    else:
+        # lego_hub.write("rq")
+        # val = lego_hub.read()
+        # FLAG_ROBOT_RUN = 0 #stop the robot
+        hub.status_light.on('red')
+    print(horizon_data)
 
 # Create a timer object
 timer = machine.Timer(-1)
@@ -231,7 +279,7 @@ def visualize_horizon_data(horizon_data):
     if horizon_data == 111:
         print("Error: Invalid horizon data")
         print("X" + "-" * (bar_length - 1))
-    elif horizon_data < min_value or horizon_data > max_value:
+    elif horizon_data <= min_value or horizon_data >= max_value:
         print("Error: horizon_data out of range")
         print("X" + "-" * (bar_length - 1))
     else:
@@ -242,32 +290,20 @@ def visualize_horizon_data(horizon_data):
         # Print the visual bar
         print(bar)
 
+PID_value = 0
+
+
 
 while 1:
-    # lego_hub.write("rq")
-    # send and read data each sampling_time_line (ms)
-    if FLAG_UART_ACTIVE == 1:
-        lego_hub.write("rq")
-        val = lego_hub.read()
-        horizon_data = GetUartData(val)
-        if horizon_data < 111:
-            FLAG_ROBOT_RUN = 1 #run 
-            visualize_horizon_data(horizon_data)
-            PID_value = pid_line_calculate(horizon_data)
-            hub.status_light.on('green')
-        else:
-            FLAG_ROBOT_RUN = 0 #stop the robot
-            hub.status_light.on('red')
-        print(horizon_data)
-    FLAG_UART_ACTIVE = 0 #deactivate, waiting timer turn it on
-
-    if FLAG_ROBOT_RUN == 1:
-        pass
-        # mecanum_robot.driveRobot(30, 0, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
-        # mecanum_robot.getAllSpeeds()
-    else:
-    #wrong value of could not receive value from uart
-        mecanum_robot.driveRobot(0, 0, 0)
+    # if FLAG_ROBOT_RUN == 1:
+    #     # pass
+    #     mecanum_robot.driveRobotSimple(50, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+    #     mecanum_robot.getAllSpeeds()
+    # else:
+    # #wrong value of could not receive value from uart
+        
+    #     mecanum_robot.driveRobot(0, 0, 0)
+    pass
 
 # Stop the robot
 mecanum_robot.stop_motors()

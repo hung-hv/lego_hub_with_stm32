@@ -64,6 +64,8 @@ UART_HandleTypeDef huart1;
 uint8_t rx_buffer[RX_BUFFER_SIZE];  // Buffer to hold incoming data
 uint8_t READY_FLAG = 0; /*0-not ready transmit, 1-ready transmit data*/
 
+uint8_t FLAG_UART_SEND = 0;
+
 uint8_t data[] = "Hello World\n";
 uint16_t adc_buffer[16] = {0};
 int16_t after_offset[16] = {0};
@@ -81,7 +83,9 @@ uint8_t mapped_horizon_value = 0;
 uint8_t mapped_vertical_value = 0;
 uint8_t line_direction = 2; // 0-horizon	1-vertical	2-unknown
 
-uint32_t while_counter = 0;
+uint16_t while_counter = 0;
+uint16_t sending_counter = 0;
+uint16_t receive_counter = 0;
 
 volatile uint8_t tx_data = 0;
 uint8_t rx_data = 0;
@@ -609,19 +613,29 @@ void Flush_UART_RX_Buffer(UART_HandleTypeDef *huart) {
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 	if (huart == &huart1) {
 		// Check if received data matches "rq"
-		if (strncmp((char *)rx_buffer, "rq", (size_t)2) == 0) {
-//			HAL_Delay(10);
+		uint8_t *buffer = "haha\0";
+		HAL_UART_Transmit(&huart1, buffer, length, 1000);
+		if (strncmp((char *)rx_buffer, "rq", (size_t)2) == 0) { //FLAG_UART_SEND
+			FLAG_UART_SEND = 1;
+		}
+		if (strncmp((char *)rx_buffer, "ef", (size_t)2) == 0){
+			FLAG_UART_SEND = 0;
+		}
+
+		if (FLAG_UART_SEND == 1) {
+//			HAL_Delay(5);
 			// Transmit the packed data
 			if (READY_FLAG == 1) {
 				TransmitPackedData(1, mapped_horizon_value);
+				sending_counter++;
 			} else if(READY_FLAG == 0) {
 				TransmitPackedData(0, mapped_horizon_value);
 			}
-//			/*clear the buffer*/
-//			rx_buffer[0] = '0';
-//			rx_buffer[1] = '0';
+			if (sending_counter >=1000) sending_counter =0;
 		}
 		HAL_UART_Receive_IT(&huart1, rx_buffer, RX_BUFFER_SIZE);
+		receive_counter++;
+		if (receive_counter  >= 1000) receive_counter = 0;
 	}
 }
 
