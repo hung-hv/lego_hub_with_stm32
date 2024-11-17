@@ -8,7 +8,7 @@ from hub import port
 portB = port.B
 portB.mode(1)   #MODE_DEFAULT = 0|MODE_FULL_DUPLEX = 1|MODE_HALF_DUPLEX = 2|MODE_GPIO = 3
 utime.sleep_ms(500)
-portB.baud(9600)
+portB.baud(115200)
 
 # # Initialize UART on port A
 # portB = port.B.device
@@ -22,35 +22,32 @@ class Uart:
         self.timeOut = timeOut
         self.id = id
 
-    #read data from UART
-    def read(self):
-        # self.write("<"+self.id+">")
+    # Read data from UART
+    def read(self, total_bits: int):
         start = utime.time()
         message = []
-        while 1:
-            # print("wating TX data...")
-            byte_read = self.port.read(1)  # Read one byte over UART lines
+
+        while True:
+            byte_read = self.port.read(1)  # Read one byte from UART
             print("-> byte read: ", byte_read)
-            
-            if byte_read:
-                if byte_read == b"\0":
-                    # End of message. Convert the message to a string and return it.
-                    return str("".join(message))
-                    # return str(message)
-                else:
-                    # Accumulate message byte.
-                    try:
-                        message.append(chr(byte_read[0]))
-                    except:
-                        pass
-                if self.timeOut is not 0:
-                    if utime.time() - start >= self.timeOut:
-                        # raise Exception("Timeout exceded. Is pi pico connected?")
-                        print("[Timeout] UART timeout exceded")
-                        break
-        
-            else: 
-                return None  # Return None if no valid data is received
+
+            if byte_read:  # If a byte is received
+                if byte_read == b"\0":  # Check for end-of-message character
+                    # If the message is longer than total_bits, take only the last total_bits characters
+                    if len(message) >= total_bits:
+                        return "".join(message[-total_bits:])
+                    else:
+                        print("[Error] Message shorter than expected total_bits.")
+                        return None  # Or raise an exception
+
+                else:  # Accumulate valid bytes in the message list
+                    message.append(chr(byte_read[0]))
+
+            # Handle timeout
+            if self.timeOut != 0 and utime.time() - start >= self.timeOut:
+                print("[Timeout] UART timeout exceeded.")
+                return None
+
 
     # write string to UART
     def write(self, str):
@@ -66,23 +63,13 @@ def GetUartData(message):
             0: has less than 2 characters.
             200: first character is not 's'.
     """
-    global FLAG_ROBOT_RUN
-    if message is not None and isinstance(message, str) and len(message) >= 4:
-        if message[0] == 's':
-            if message[1] == 'f': #start of frame
-                if message[3] == 'r':
-                    horizon_data = ord(message[2])
-                    return horizon_data
-                else:
-                    return 111
-            else: 
-                return 222
-        else:
-            return 333
+    
+    if message is not None:
+        return ord(message)
     else:
         return 444
 
-FLAG_ROBOT_RUN = 0 # 0-stop robot, 1-robot run
+
 class Mecanum:
     def __init__(self, wheel_radius, robot_width, robot_length):
         self.wheel_radius = wheel_radius
@@ -119,13 +106,13 @@ class Mecanum:
         Args:
             speeds (list): A list of four speeds for the wheels.
         """
-        limit = 50
-        upper_limit = limit
-        lower_limit = -limit
+        # limit = 50
+        upper_limit = 100
+        lower_limit = -50
         for i in range(len(speeds)):
-            if speeds[i] < lower_limit:
+            if speeds[i] <= lower_limit:
                 speeds[i] = lower_limit
-            elif speeds[i] > upper_limit:
+            elif speeds[i] >= upper_limit:
                 speeds[i] = upper_limit
         self.motor_FR.start_at_power(int(speeds[0]))
         # print("speeds[0]: " + str(speeds[0]))
@@ -186,54 +173,53 @@ class Mecanum:
             vx (float): Velocity in the x direction.
             omega (float): Angular velocity.
         """
-        # left_value = 0
-        # right_value = 0
-        # if PID > 0: 
-        #     left_value = PID
-        #     right_value = 0
-        # if PID < 0:
-        #     right_value = -PID
-        #     left_value = 0
-        
-
-        # self.wheel_speeds[0] = vx + left_value  # Front right
-        # self.wheel_speeds[2] = vx + left_value  # Rear right
-        # self.wheel_speeds[1] = vx + right_value  # Front left
-        # self.wheel_speeds[3] = vx + right_value  # Rear left
-        if PID < 0: 
-            self.wheel_speeds[0] = vx + PID  # Front right
-            self.wheel_speeds[2] = vx + PID  # Rear right
-            self.wheel_speeds[1] = vx   # Front left
-            self.wheel_speeds[3] = vx   # Rear left
-        else:
-            self.wheel_speeds[0] = vx   # Front right
-            self.wheel_speeds[2] = vx   # Rear right
-            self.wheel_speeds[1] = vx - PID  # Front left
-            self.wheel_speeds[3] = vx - PID  # Rear left
+        min_limit = -20
+        right_speed = vx  +PID
+        if right_speed <= min_limit:
+            right_speed = min_limit
+        left_speed = vx -PID
+        if left_speed <= min_limit:
+            left_speed = min_limit
+        self.wheel_speeds[0] = right_speed  # Front right
+        self.wheel_speeds[2] = right_speed # Rear right
+        self.wheel_speeds[1] = left_speed # Front left
+        self.wheel_speeds[3] = left_speed # Rear left
         # Set motor speeds
         self.setWheelSpeed(self.wheel_speeds)
 
-kp_line = 1.5
-ki_line = 0 #0.005
-kd_line = 0 #0.6
-sampling_time_line = 10
+kp_line = 0.7
+ki_line = 0.003 #0.005
+kd_line = 5 #0.6
+sampling_time_line = 1
 invert_samling_time_line = 1/sampling_time_line
 I_term_line = 0
 delta_e_line = 0
 prev_delta_e_line = 0
+#reset the yaw pitch roll
+motion.yaw_pitch_roll(0)
+yaw_value = 0
+prev_yaw_value = 0
 
 def pid_line_calculate(sensor_value):
-    global kp_line, ki_line, kd_line, invert_samling_time_line, sampling_time_line, I_term_line, delta_e_line, prev_delta_e_line
+    global kp_line, ki_line, kd_line, invert_samling_time_line, sampling_time_line, I_term_line, delta_e_line, prev_delta_e_line, yaw_value, prev_yaw_value
 
     prev_delta_e_line = delta_e_line
 
     delta_e_line = 51 - sensor_value #middle value
     print("[delta_e_line]:", delta_e_line)
-    P_term_line = kp_line * delta_e_line
-    I_term_line = I_term_line + (ki_line * delta_e_line * sampling_time_line)
-    D_term_line = kd_line * (delta_e_line - prev_delta_e_line)/invert_samling_time_line
-    PID_line_control = P_term_line + I_term_line + D_term_line
-    print("[PID_line_control]:", PID_line_control)
+    prev_yaw_value = yaw_value
+    yaw_value = motion.yaw_pitch_roll()[0]
+    if delta_e_line <= -10 or delta_e_line >= 10:
+    # if 1:
+        P_term_line = kp_line * delta_e_line
+        I_term_line = I_term_line + (ki_line * delta_e_line * sampling_time_line)
+        # D_term_line = kd_line * (delta_e_line - prev_delta_e_line)/invert_samling_time_line
+        D_term_line = kd_line * (yaw_value - prev_yaw_value)/invert_samling_time_line
+        print(D_term_line)
+        PID_line_control = P_term_line + I_term_line - D_term_line
+    else:
+        PID_line_control = 0
+    # print("[PID_line_control]:", PID_line_control)
     return PID_line_control
 
 # Initialize the hub and uart for portB
@@ -242,25 +228,20 @@ hub = MSHub()
 print("init hub\n")
 FLAG_UART_ACTIVE = 0
 # Timer callback function
+timer_counter = 0
+cl1_timer_counter = 0
+FLAG_OBJ_3 = 0
 def timer_callback(timer):
+    global FLAG_UART_ACTIVE, timer_counter, FLAG_OBJ_3
     # global FLAG_UART_ACTIVE
     # hub.status_light.on('green')
-    # FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart data
-    lego_hub.write("rq")
-    val = lego_hub.read()
-    horizon_data = GetUartData(val)
-    if horizon_data < 111:
-        # FLAG_ROBOT_RUN = 1 #run 
-        visualize_horizon_data(horizon_data)
-        PID_value = pid_line_calculate(horizon_data)
-        hub.status_light.on('green')
-        lego_hub.write("ef")
-    else:
-        # lego_hub.write("rq")
-        # val = lego_hub.read()
-        # FLAG_ROBOT_RUN = 0 #stop the robot
-        hub.status_light.on('red')
-    print(horizon_data)
+    FLAG_UART_ACTIVE = 1 #set flag to receive and transmit uart data
+    if FLAG_OBJ_3 == 1:
+        timer_counter = timer_counter + 1
+    else: 
+        timer_counter = 0
+    if timer_counter >=100000:
+        timer_counter = 0
 
 # Create a timer object
 timer = machine.Timer(-1)
@@ -292,18 +273,72 @@ def visualize_horizon_data(horizon_data):
 
 PID_value = 0
 
-
-
+FLAG_ROBOT_RUN = 0 # 0-stop robot, 1-robot run
+FLAG_DIRECTIONAL = 0 # 2-left|3-mid|4-right
+FLAG_RUN_MODE = 1 #1-normal run by pid| 3-run by challenge 3
 while 1:
-    # if FLAG_ROBOT_RUN == 1:
-    #     # pass
-    #     mecanum_robot.driveRobotSimple(50, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
-    #     mecanum_robot.getAllSpeeds()
-    # else:
-    # #wrong value of could not receive value from uart
+    
         
     #     mecanum_robot.driveRobot(0, 0, 0)
-    pass
+    if FLAG_UART_ACTIVE == 1:
+        horizon_data = 333 # a invalid value
+        lego_hub.write("rq")
+        rx_message = lego_hub.read(4)
+        if rx_message is not None:
+            if rx_message.startswith("ok"):
+                print("ACKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK")
+                if rx_message[3] is not None:
+                    horizon_data  = ord(rx_message[3])
+                if rx_message[2] is not None:
+                    FLAG_DIRECTIONAL = ord(rx_message[2])
+                FLAG_UART_ACTIVE = 0 #deactivate transmition, wait for next transmit
+                FLAG_ROBOT_RUN = 1
+            if rx_message.startswith("no"):
+                print("NOT ACK-----------------------------------------")
+                FLAG_UART_ACTIVE = 1 #send request again till get uart signal
+                FLAG_ROBOT_RUN = 0
+        
+        if horizon_data < 111:
+            # FLAG_ROBOT_RUN = 1 #run 
+            visualize_horizon_data(horizon_data)
+            PID_value = pid_line_calculate(horizon_data)
+            hub.status_light.on('green')
+            if FLAG_DIRECTIONAL == 3:
+                #run by mode 3
+                FLAG_RUN_MODE = 3
+            # lego_hub.write("ef")
+        else:
+            # lego_hub.write("rq")
+            # val = lego_hub.read()
+            # FLAG_ROBOT_RUN = 0 #stop the robot
+            hub.status_light.on('red')
+        print(horizon_data)
+
+    if FLAG_DIRECTIONAL == 3:
+        #run by mode 3
+        FLAG_RUN_MODE = 3
+    
+
+    if FLAG_ROBOT_RUN == 1:
+        # pass
+        if FLAG_RUN_MODE == 3:
+            FLAG_OBJ_3 = 1 #activate timer
+            if timer_counter < 2000:
+                mecanum_robot.driveRobot(0, 45, 0)
+            if timer_counter >= 2000 and timer_counter <= 5000:
+                mecanum_robot.driveRobot(40, 0, -5)
+            if timer_counter > 5000:
+                FLAG_RUN_MODE = 1
+                FLAG_OBJ_3 = 0 #deactivate timer
+            
+        if FLAG_RUN_MODE == 1: 
+            mecanum_robot.driveRobotSimple(30, -PID_value)  # vx = 0.5 m/s, vy = 0 m/s, omega = 0 rad/s
+        mecanum_robot.getAllSpeeds()
+    else:
+        pass
+    # # #wrong value of could not receive value from uart
+    # mecanum_robot.driveRobotSimple(150, 0)
+
 
 # Stop the robot
 mecanum_robot.stop_motors()

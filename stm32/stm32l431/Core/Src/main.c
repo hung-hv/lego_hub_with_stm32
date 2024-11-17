@@ -65,6 +65,7 @@ uint8_t rx_buffer[RX_BUFFER_SIZE];  // Buffer to hold incoming data
 uint8_t READY_FLAG = 0; /*0-not ready transmit, 1-ready transmit data*/
 
 uint8_t FLAG_UART_SEND = 0;
+uint8_t ACK_UART_SEND = 1;
 
 uint8_t data[] = "Hello World\n";
 uint16_t adc_buffer[16] = {0};
@@ -82,6 +83,7 @@ int16_t last_vertical_value = 0;
 uint8_t mapped_horizon_value = 0;
 uint8_t mapped_vertical_value = 0;
 uint8_t line_direction = 2; // 0-horizon	1-vertical	2-unknown
+uint8_t directional = 1; // 1-left|2-mid|3-right
 
 uint16_t while_counter = 0;
 uint16_t sending_counter = 0;
@@ -104,7 +106,7 @@ static void MX_USART1_UART_Init(void);
 int16_t ProcessLineSensor(void);
 uint8_t map(int input, int input_min, int input_max, int output_min, int output_max);
 void Flush_UART_RX_Buffer(UART_HandleTypeDef *huart);
-void TransmitPackedData(uint8_t frame_type, uint8_t sensor_data);
+void TransmitPackedData(uint8_t sensor_data, uint8_t direction, uint8_t *ack);
 
 /* USER CODE END PFP */
 
@@ -436,7 +438,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 9600;
+  huart1.Init.BaudRate = 115200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -565,12 +567,22 @@ int16_t ProcessLineSensor(void) {
 		}
 		last_horizon_value = horizontal_value;
 		line_direction = 0;
+		directional = 1;
 	}
 	else {
 		/*out of line or to many sensors in 1 line*/
 		horizontal_value = last_horizon_value;
 		line_direction = 2;
+		if (horizontal_value < -200) {
+			directional = 2;
+		} else if (horizontal_value > 200) {
+			directional = 4;
+		} else {
+			directional = 3;
+		}
 	}
+
+
 
 	return 0;
 }
@@ -579,18 +591,15 @@ int16_t ProcessLineSensor(void) {
  * 			1: send "v" - line on vertical sensors
  */
 
-void TransmitPackedData(uint8_t frame_type, uint8_t sensor_data) {
+void TransmitPackedData(uint8_t sensor_data, uint8_t direction, uint8_t *ack) {
 
 	/*packaging data with prefix and suffix to message*/
 	/*byte[0] and byte[1]*/
-	packed_data[0] = 's';
-	packed_data[1] = 'f'; /*start frame*/
-	packed_data[2] = sensor_data;
-	if (frame_type == 1) { /*ready to transmit data*/
-		packed_data[3] = 'r'; /*ready*/
-	} else if (frame_type == 0){ /*not init done or pending*/
-		packed_data[3] = 'n'; /*not*/
-	}
+//	const uint8_t buffer_len = 5;
+	packed_data[0] = *(ack);
+	packed_data[1] = *(ack+1); /*start frame*/
+	packed_data[2] = direction;
+	packed_data[3] = sensor_data;
 	/*byte[2]*/
 
 	/*byte[3]*/
@@ -599,7 +608,7 @@ void TransmitPackedData(uint8_t frame_type, uint8_t sensor_data) {
 
 	/*send the packed data*/
 //	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-	HAL_UART_Transmit(&huart1, packed_data, length, 1000);
+	HAL_UART_Transmit(&huart1, packed_data, sizeof(packed_data), 1000);
 }
 
 // Function to flush the UART RX buffer
@@ -613,29 +622,41 @@ void Flush_UART_RX_Buffer(UART_HandleTypeDef *huart) {
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 	if (huart == &huart1) {
 		// Check if received data matches "rq"
-		uint8_t *buffer = "haha\0";
-		HAL_UART_Transmit(&huart1, buffer, length, 1000);
+//		uint8_t *buffer = "haha\0";
+//		HAL_UART_Transmit(&huart1, buffer, length, 1000);
 		if (strncmp((char *)rx_buffer, "rq", (size_t)2) == 0) { //FLAG_UART_SEND
 			FLAG_UART_SEND = 1;
+			ACK_UART_SEND = 1; /*receive request, send ack*/
+			uint8_t ack[] = "ok";
+			TransmitPackedData(mapped_horizon_value, directional, ack);
+			sending_counter++;
+//			HAL_UART_Transmit(&huart1, ack, sizeof(ack), 100);
+		} else {
+			ACK_UART_SEND = 0; /*send NACK to hub*/
+			uint8_t nack[] = "no";
+			TransmitPackedData(mapped_horizon_value, directional, nack);
+			memset(rx_buffer, 0, RX_BUFFER_SIZE);
+//			HAL_UART_Transmit(&huart1, nack, sizeof(nack), 100);
 		}
-		if (strncmp((char *)rx_buffer, "ef", (size_t)2) == 0){
-			FLAG_UART_SEND = 0;
-		}
+//		if (strncmp((char *)rx_buffer, "ef", (size_t)2) == 0){
+//			FLAG_UART_SEND = 0;
+//		}
 
-		if (FLAG_UART_SEND == 1) {
-//			HAL_Delay(5);
-			// Transmit the packed data
-			if (READY_FLAG == 1) {
-				TransmitPackedData(1, mapped_horizon_value);
-				sending_counter++;
-			} else if(READY_FLAG == 0) {
-				TransmitPackedData(0, mapped_horizon_value);
-			}
-			if (sending_counter >=1000) sending_counter =0;
-		}
+//		if (FLAG_UART_SEND == 1) {
+////			HAL_Delay(5);
+//			// Transmit the packed data
+//			if (READY_FLAG == 1) {
+//				TransmitPackedData(1, mapped_horizon_value);
+//				sending_counter++;
+//			} else if(READY_FLAG == 0) {
+//				TransmitPackedData(0, mapped_horizon_value);
+//			}
+//
+//		}
 		HAL_UART_Receive_IT(&huart1, rx_buffer, RX_BUFFER_SIZE);
 		receive_counter++;
 		if (receive_counter  >= 1000) receive_counter = 0;
+		if (sending_counter >=1000) sending_counter =0;
 	}
 }
 
